@@ -16,104 +16,141 @@ package DateTime::Event::Predict;
 use warnings;
 use strict;
 
-#use 5.006; #*Need this?
-
 use Carp qw(carp croak);
 use DateTime;
 #use Params::Check;
 use Params::Validate qw(:all);
-
-use Math::Counting;
-use Math::Round qw(round);
-
+use Math::Counting;         #**Hopefully won't need this?
+use Math::Round qw(round);  #**Hopefully won't need this?
+use POSIX qw(ceil);
 use Data::Dumper;
+
+use DateTime::Event::Predict::Profile;
 
 our $VERSION = '0.01';
 
-use constant e => 2.71828182845905; #Euler's number
-
-#Define period types
-our %periods = (
-	# Something here for milliseconds with Time::HiRes?
-	second => 1,
-	minute => 60,
-	hour   => 60 * 60,
-	day    => 24 * 60 * 60,
-	week   => 7 * 24 * 60 * 60,
-	month  => 30 * 24 * 60 * 60, #***WTF to do here?
-	year   => 365 * 24 * 60 * 60, #***Also WTF to do here? Minimum value maybe? (365 for year, 28 for month? Or 30?)
-);
+use constant e => 2.71828182845905; #Euler's number #***Can probably get rid of this??
 
 #***We'll also need to define if buckets interfere with each other, like if there's a difference in quarters between dates, does that mean
 #   we don't check for a difference between months?
 #Distinct point-in-time buckets
-our %distinct_buckets = (	
-    second_of_minute => {
+our %distinct_buckets = {
+	nanosecond => {
+		accessor => 'nanosecond',
+		on	 	 => 0,
+		weight	 => 0,
+		order    => 1,
+		buckets  => {},
+	},
+	microsecond => {
+		accessor => 'microsecond',
+		on	 	 => 0,
+		weight	 => 0,
+		order    => 2,
+		buckets  => {},
+	},
+	millisecond => {
+		accessor => 'millisecond',
+		on	 	 => 0,
+		weight	 => 0,
+		order    => 3,
+		buckets  => {},
+	},
+    second => {
     	accessor => 'second', #DateTime accessor method for this bucket
     	on		 => 0,        #Whether this bucket is on by default
     	weight   => 0,        #The influence this bucket has on results,
-    	buckets  => { map { $_ => 0 } (0 .. 66) }, #Possible values that can be incremented in the bucket (Leap seconds!)
+    	order    => 4,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (0 .. 66) }, #Possible values that can be incremented in the bucket (Leap seconds!)
     	#*** Need to define precendence or weights here (OR ELSEWHERE!), as well as whether each bucket is turned on by default #* leap seconds
     },
-    minute_of_hour => {
+    fractional_second => {
+		accessor => 'fractional_second',
+		on	 	 => 0,
+		weight	 => 0,
+		order    => 5,
+		buckets  => {},
+	},
+    minute => {
     	accessor => 'minute',
     	on   	 => 0,
     	weight   => 0,
-    	buckets  => { map { $_ => 0 } (0 .. 59) },
+    	order    => 6,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (0 .. 59) },
    	},
-    hour_of_day => {
+    hour => {
     	accessor => 'hour',
     	on   	 => 0,
-    	weight   => 1,
-    	buckets  => { map { $_ => 0 } (0 .. 23) },
+    	weight   => 0,
+    	order    => 7,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (0 .. 23) },
     },
     day_of_week      => {
     	accessor => 'day_of_week',
     	on       => 1,
-    	weight   => 1,
-    	buckets  => { map { $_ => 0 } (1 .. 7) }, #Monday is first day of week #check local_day_of_week() 
+    	weight   => 0,
+    	order    => 8,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (1 .. 7) }, #Monday is first day of week #check local_day_of_week() 
     },
     day_of_month => {
     	accessor => 'day',
     	on       => 1,
-    	weight   => 1,
-    	buckets  => { map { $_ => 0 } (1 .. 31) }, #**How do we handle different month end days? (there is a last_day_of_month or something accessor in DT)
+    	weight   => 0,
+    	order    => 9,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (1 .. 31) }, #**How do we handle different month end days? (there is a last_day_of_month or something accessor in DT)
     },
     day_of_quarter => {
     	accessor => 'day_of_quarter',
     	on       => 0,
-    	weight   => 1,
-    	buckets  => { map { $_ => 0 } (1 .. 91) }, #**How do we handle different month end days? (there is a last_day_of_month or something accessor in DT)
+    	weight   => 0,
+    	order    => 10,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (1 .. 91) }, #**How do we handle different month end days? (there is a last_day_of_month or something accessor in DT)
     },
     weekday_of_month => {
     	accessor => 'weekday_of_month', #Returns a number from 1..5 indicating which week day of the month this is. For example, June 9, 2003 is the second Monday of the month, and so this method returns 2 for that day.
     	on       => 0,
-    	weight   => 1,
-    	buckets  => { map { $_ => 0 } (1 .. 5) }, #**How do we handle different month end days? (there is a last_day_of_month or something accessor in DT)
+    	weight   => 0,
+    	order    => 11,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (1 .. 5) }, #**How do we handle different month end days? (there is a last_day_of_month or something accessor in DT)
     },
     week_of_month => {
     	accessor => 'week_of_month',
     	on       => 0,
     	weight   => 0,
-    	buckets  => { map { $_ => 0 } (0 .. 5) },
+    	order    => 12,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (0 .. 5) },
     },	
     day_of_year => {
     	accessor => 'day_of_year',
     	on       => 1,
     	weight   => 0,
-    	buckets  => { map { $_ => 0 } (1 .. 366) }, #**How do we handle leap years?
+    	order    => 13,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (1 .. 366) }, #**How do we handle leap years?
     },
     month_of_year => {
     	accessor => 'month',
     	on       => 0,
     	weight   => 0,
-    	buckets  => { map { $_ => 0 } (1 .. 12) },
+    	order    => 14,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (1 .. 12) },
     },
     quarter_of_year => {
     	accessor => 'quarter',
     	on       => 0,
     	weight   => 0,
-    	buckets  => { map { $_ => 0 } (1 .. 4) },
+    	order    => 15,
+    	buckets  => {},
+    	#buckets  => { map { $_ => 0 } (1 .. 4) },
     },
     
     #Maybe define special buckets here? For "last_day_of_month" or "last_day_of_year", etc?
@@ -121,6 +158,11 @@ our %distinct_buckets = (
     #Year of century?
     #Century of millenia?
 );
+#Aliases
+$distinct_buckets->{'second_of_minute'} = $distinct->{'second'};
+$distinct_buckets->{'minute_of_hour'}   = $distinct->{'minute'};
+$distinct_buckets->{'hour_of_day'}   	= $distinct->{'hour'};
+
 
 
 #***We'll need an order of precedence here, so that when we find a difference in months we don't increment any of the differences smaller
@@ -201,10 +243,11 @@ sub new {
     	dates   		 => [],
     	distinct_buckets => {},
     	interval_buckets => {},
-    	epoch_intervals  => [],
-    	total_epoch      => 0,
+    	epoch_intervals  => [], #**Probably won't need this any more
+    	total_epoch_interval    => 0,
     	largest_epoch_interval  => 0,
     	smallest_epoch_interval => 0,
+    	mean_epoc_interval      => 0,
     	
     	#Whether this data set has been trained or not
     	trained => 0,
@@ -266,11 +309,19 @@ sub add_date {
 
 #Get or set the profile for this predictor
 sub profile {
+	my $self    = shift;
+	my $profile = shift; #$profile can be a string specifying a profile name that is provided by default, or a profile 
 	
+	#Get the profile
+	if (! defined || ! $profile) { return $self->{profile}; }
+	
+	#Validate & set the profile
+	$self->{profile} = $profile;
+	
+	return 1;
 }
 
-#sub predict {
-sub train { #*** Maybe predict() should be train(), that is, have the training part that discovers intervals separate from the prediction method. This would let us do different types of predictions on the same training model
+sub train {
 	my $self = shift;
 	#***Add optional dates array param to predict from here, plus other config params?
 	
@@ -311,10 +362,13 @@ sub train { #*** Maybe predict() should be train(), that is, have the training p
 		#Add the epoch difference for poisson probabilities
 		my $epoch_interval = $date->hires_epoch() - $cur_date->hires_epoch();
 		push(@{ $self->{epoch_intervals} }, $epoch_interval);
-		$self->{total_epoch} += $epoch_interval;
+		$self->{total_epoch_interval} += $epoch_interval;
 		
 		$cur_date = $date;
 	}
+	
+	#Average interval between dates in epoch seconds
+	$self->{mean_epoch_interval} = $self->{total_epoch_interval} / (scalar @dates);
 	
 	$self->{trained}++;
 }
@@ -329,7 +383,7 @@ sub poisson_predict_epoch {
 	
 	my $interval_count = scalar( @{ $self->{epoch_intervals} } );
 	
-	my $avg_diff = ($self->{total_epoch} / $interval_count);
+	my $avg_diff = ($self->{total_epoch_interval} / $interval_count);
 	
 	#Get the standard deviation of the epoch intervals
 	my $total_deviation;
@@ -745,6 +799,93 @@ sub average_predict_days {
 		print $pdate->{date}->mdy('/') . ' ' . $pdate->{date}->hms . " (" . $pdate->{interval} . " interval days : " . $keyed_intervals{ $pdate->{interval} }->{probability}  . ") (distinct sum: " . $pdate->{distinct_sum} . ")\n";
 	}
 }
+
+
+#***Ideally this will be the final, WORKABLE prediction method
+sub predict {
+	my $self    = shift;
+	my %options = @_;
+	
+	unless ($self->is_trained) { $self->train(); $self->{trained}++; }
+	
+	#Make a copy of the buckets so we can mess with them
+	my %buckets = %{ $self->{distinct_buckets} };
+	
+	#Figure the mean, variance, and standard deviation for each bucket
+	foreach my $bucket (values %buckets) {
+		my $total = 0;
+		my $count = 0;
+		while (my ($value, $count) = each %$bucket) {
+			#Gotta loop for each time the value has been found
+			for (1 .. $count) {
+				$total += $value;
+				$count++;
+			}
+		}
+		
+		my $mean = $total / $count;
+		
+		#Get the variance
+		my $total_variance = 0;
+		while (my ($value, $count) = each %$bucket) {
+			#Gotta loop for each time the value has been found
+			my $this_variance = ($value - $mean) ** 2;
+			
+			$total_variance += $this_variance * $count;
+		}
+		
+		my $variance = $total_variance / $count;
+		my $stdev = sqrt($variance);
+		
+		$bucket->{mean}     = $mean;
+		$bucket->{variance} = $variance;
+		$bucket->{stdev}    = $stdev;
+	}
+	
+	#Get the most recent date
+	my $most_recent_date = (sort { $b->hires_epoch() <=> $a->hires_epoch() } @{ $self->{dates} })[0]
+	
+	#Make a starting search date that has been moved ahead by the average interval beteween dates (in epoch seconds)
+	my $duration = new DateTime::Duration(
+		seconds => $self->{mean_epoch_interval}; #Might need to round off hires second info here?
+	);
+	my $start_date = $most_recent_date + $duration;
+	
+	#Limit the number of standard deviations to look through
+	my $stdev_limit = 2;
+	
+	my @predictions = ();
+	#Get the first bucket name after sorting the buckets from largest interval to smallest (i.e. year->month->day->hour ... microsecond, etc)
+	my @bucket_keys = (sort $distinct_buckets->{ $b }->{order} cmp $distinct_buckets->{ $a }->{order} keys %$buckets)[0];
+	my $first_bucket_name = shift @bucket_keys;
+	
+	#Check 
+	$self->date_descend($start_date, $first_bucket_name, \%buckets, \@bucket_keys, $stdev_limit, \@predictions);
+	
+	return wantarray ? @predictions : $predictions[0];
+}
+
+#Descend down into the date parts
+sub date_descend {
+	my $self = shift;
+	my ($date, $bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions) = @_;
+	
+	#Get the actual bucket for this bucket name
+	my $bucket = $buckets{ $bucket_name };
+	
+	my $search_range = $bucket->{stdev} * $stdev_limit;
+	
+	foreach my $search_inc ( 0 .. ceil($search_range) ) {
+		#Search forwards
+		my $new_date = $date + 
+		
+		#Search backwards
+		$search_inc * -1;
+	}
+	
+	return 1;
+}
+
 
 sub print_dates {
 	my $self = shift;

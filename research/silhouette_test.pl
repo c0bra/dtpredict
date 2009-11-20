@@ -1,6 +1,7 @@
 #!/usr/bin/perl
 
 use warnings;
+use strict;
 use POSIX;
 use Data::Dumper;
 
@@ -11,6 +12,7 @@ local($|) = 1;
 #my @s = (1, 2, 3, 4, 5, 6, 7, 8, 9, 10);
 my @s = (1, 2, 3, 21, 22, 23, 41, 42, 43);
 #my @s = (1, 2, 3, 4, 35, 36, 37);
+#my @s = (1, 2, 3, 4, 35, 36, 37, 91, 92, 256, 257, 258);
 #my @s = (112,91,94,110,98,106,103,109,107,123,117,129,135,123,122,116,122,98,115,134,93,101,125,111,116,119,123,108,129,59,120,109,112,119,30,91,117,83,103,111,106,113,100,100,102,109,88,100,110,127,95,102,106,105,109,116,107,102,110,124,97,115,104,119,103,121,107,106,121,100,118,118,114,96,89,95,100,100,103,95,102,124,96);
 
 my $scount = scalar @s;
@@ -163,92 +165,60 @@ foreach my $k (1 .. $#s+1) {
 	}
 
 	#print Dumper(\%centroids);
-	#print Dumper(\%cmap);
+	#print "CMAP: " . Dumper(\%cmap);
 	$clusters{ $k } = \%cmap;
 	
-	### Determine the distortion for this number of clusters. When we see the distortion start
-	###  to fall off we'll know we've reached the right number
-	# Go through each cluster, finding the distortion. Keep the smallest
-	my $smallest;
+	## Silhouettes
+	## 1. Find the similarity for each point 
+	#next if (scalar keys %cmap == 1); #Skip if we only have one cluster
+	
+	my $total_dissimilarity = 0;
+	my %cmap2 = %cmap; #Make a copy for internal loop interation
 	while (my ($cid, $val) = each %cmap) {
-		#Get the variance for the elements of this cluster
-		my $centered_total = 0;
-		#my $count = 0;
-		my $count = scalar keys %{ $val->{elements} };
-		
-		#my $xmean = 0;
-		#map { $xmean += $_ } keys %{ $val->{elements} };
-		#$xmean = $xmean / (scalar keys %{ $val->{elements} });
-		
-		#print "Xmean: $xmean\n";
-		
-		
-		foreach my $x (keys %{ $val->{elements} }) {
-			$centered_total += (($x - $val->{centroid}) ** 2);
-			#$count++;
-		}
-		
-		#$count++ if ($count <= 1);
-		#print "K$k count for centroid $val->{centroid}: $count\n";
-		#my $variance = 0;
-		#if ($count == 1) {
-		#	$variance = $centered_total;
-		#}
-		#elsif ($count > 0) {
-		#	my $variance = $centered_total / ($count); ####Uncomment this line for per-cluster variance
-		#}
-		#else {
-		#	$smallest = 0;
-		#	next;
-		#}
-		#print "Variance for centroid $val->{centroid} with $k clusters: $variance\n";
-		
-		#$count++ if ($count <= 1);
-		#Get the expected value
-		my $exp_value;
-		#if ($count == 0) {
-		#	$exp_value = 0;
-		#}
-		#else {
-			my $exp_total = 0;
-			foreach my $x (keys %{ $val->{elements} }) {
-				$exp_total += ( (($x - $val->{centroid}) ** 2) * ($variance ** -1) );
-				#$exp_total += ( ($x - $val->{centroid}) * ($variance ** -1) * ($x - $val->{centroid}) );
-				#$exp_total += ( ($x - $val->{centroid} ** 2) );
+		my $pts      = $val->{elements};
+		my $centroid = $val->{centroid};
+		#For each data point
+		foreach my $pt (keys %$pts) {
+			#Calculate the distance from this point's centroid
+			my $ai = abs($pt - $centroid);
+			
+			#Now calculate the similarity vs every other centroid
+			my $lowest_bi;
+			foreach my $val (values %cmap2) {
+				my $other_ctrd = $val->{centroid};
+					next if $other_ctrd == $centroid;
+				
+				my $bi = abs($pt - $other_ctrd);
+				$lowest_bi = $bi if (! defined $lowest_bi || $bi < $lowest_bi);
+			}
+			#print "	$pt - $ai : $lowest_bi\n";
+			
+			my $max_ai_bi;
+			if ($lowest_bi) {
+				$max_ai_bi = ($lowest_bi > $ai) ? $lowest_bi : $ai;
+			}
+			else {
+				$max_ai_bi = $ai;
 			}
 			
-			$exp_value = $exp_total / ($count - 1);
-		#}
-		
-		print "Centroid $val->{centroid} expected value: $exp_value\n";
-		
-		if (! defined $smallest) {
-			$smallest = $exp_value;
-		}
-		elsif ($exp_value < $smallest) {
-			$smallest = $exp_value;
+			#Silhouette for this pt
+			my $si;
+			if ($lowest_bi) {
+				$si = ($lowest_bi - $ai) / $max_ai_bi;
+			}
+			else {
+				$si = $ai / $max_ai_bi;
+			}
+			
+			$total_dissimilarity += $si;
+			
+			
 		}
 	}
 	
-	my $distortion = (1 / $scount) * $smallest;
-	
-	print "Distortion for $k K-clusters: $distortion\n";
-	
-	my $D = $distortions[$k] = $distortion ** ($Y * -1);
-	
-	print "D for K$k: " . $distortions[$k] . " ($distortion ** -$Y)\n";
-	
-	my $J = ($distortions[$k] - $distortions[$k-1]);
-	$Js[$k] = $J;
-	print "K$k J: $J\n";
-	#	next if ($k == 1); #Don't bother checking the previous cluster difference against the one before it, it's 0 and there isn't any
-	my $prev_J = ($distortions[$k-1] - $distortions[$k-2]);
-	my $prev_D = $distortions[$k-1];
-	#if ($J <= $prev_J) {
-	#if ($D <= $prev_D) {
-	#	%final_cluster = %{ $clusters{ $k-1 } };
-	#	last;
-	#}
+	print "$k CLUSTERS\n";
+	print "	TOTAL Dissimilarity: $total_dissimilarity\n";
+	print "	AVG Dissimilarity: " . $total_dissimilarity / $scount . "\n";
 }
 
 #warn Dumper(\@Js);
