@@ -1,1 +1,9 @@
-* [TODO] - Add a clustering() method so that clustering can be turned on or off whenever
+TODO list for Perl module DateTime::Even::Predict
+
+12/16/2009
+* Refactor incremental search method so it can be reused in both forward and backward searches
+* Due to possible DOS attack that can be done through very large duration operations (thousands
+  of years in the future, etc), we'll need to add some sort of protection, I think.
+
+??/??/????
+* Add a clustering() method so that clustering can be turned on or off whenever

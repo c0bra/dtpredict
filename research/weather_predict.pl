@@ -2,12 +2,16 @@
 
 use lib qw( ../lib );
 
+use strict;
 use Data::Dumper;
 
-use Date::Parse;
 use DateTime::Event::Predict;
 
-my $dtp = new DateTime::Event::Predict;
+my $dtp = new DateTime::Event::Predict(
+	profile => 'holiday',
+);
+
+#warn Dumper($dtp); exit;
 
 open(my $fh, '<', 'last_frost_dates.txt');
 while (my $line = <$fh>) {
@@ -26,10 +30,9 @@ while (my $line = <$fh>) {
 }
 close($fh);
 
-$dtp->train();
-	print "DTP: " . Dumper($dtp) . "\n"; exit;
+my @predictions = $dtp->predict;
 
-$dtp->print_dates();
-#$dtp->regress_predict_buckets();
-$dtp->poisson_predict_days();
-#$dtp->average_predict_days();
+print "PREDICTIONS:\n";
+foreach my $d (@predictions) {
+	print $d->mdy('/') . "\n";
+}

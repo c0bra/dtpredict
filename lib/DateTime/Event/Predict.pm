@@ -23,7 +23,7 @@ use Math::Counting;         #**Hopefully won't need this?
 use Math::Round qw(round);  #**Hopefully won't need this?
 use POSIX qw(ceil);
 use Data::Dumper;
-#use Smart::Comments;
+use Smart::Comments;
 
 use DateTime::Event::Predict::Profile;
 
@@ -234,9 +234,7 @@ our %interval_buckets = (
 our @distinct_bucket_accessors = map { $_->{accessor} } values %distinct_buckets; #Make a list of all the accessors so we can check for can() on each DateTime passed to us (***we'll only want to check accessors for buckets that have been turned on)
 our @interval_bucket_accessors = map { $_->{accessor} } values %interval_buckets;                                                                                          
 
-our $default_profile = {
-	proximity => 1,
-};
+our $default_profile = 'holiday';
 
 #===============================================================================#
 
@@ -265,27 +263,9 @@ sub new {
     };
     bless($self, $class);
     
-    #Add the buckets
-    while (my ($name, $bucket) = each %distinct_buckets) {
-    	next unless $bucket->{on}; #Skip buckets that are turned off
-    	$self->{distinct_buckets}->{ $name } = {
-    		accessor => $bucket->{accessor},
-    		duration => $bucket->{duration},
-    		weight   => $bucket->{weight},
-    		buckets  => $bucket->{buckets},
-    	};
-    }
+    $opts{profile} = 'default' if ! $opts{profile};
     
-    while (my ($name, $bucket) = each %interval_buckets) {
-    	next unless $bucket->{on}; #Skip buckets that are turned off
-    	$self->{interval_buckets}->{ $name } = {
-    		accessor => $bucket->{accessor},
-    		weight   => $bucket->{weight},
-    		buckets  => {},
-    	};
-    }
-    
-    $self->{profile} = $default_profile;
+    $self->profile( $opts{profile} );
     
     return $self;
 }
@@ -323,13 +303,41 @@ sub add_date {
 #Get or set the profile for this predictor
 sub profile {
 	my $self    = shift;
-	my $profile = shift; #$profile can be a string specifying a profile name that is provided by default, or a profile 
+	my $profile = shift; #$profile can be a string specifying a profile name that is provided by default, or a profile object
+	
+	validate_pos(@_, { type => SCALAR, optional => 1 });
 	
 	#Get the profile
-	if (! defined || ! $profile) { return $self->{profile}; }
+	if (! defined $profile || ! $profile) { return $self->{profile}; }
 	
 	#Validate & set the profile
-	$self->{profile} = $profile;
+	
+	my %profiles = %DateTime::Event::Predict::Profile::PROFILES;
+	
+	my $new_profile = $profiles{ $profile };
+	
+	#Add the buckets
+    while (my ($name, $bucket) = each %distinct_buckets) {
+    	next unless $new_profile->{buckets}->{ $name }; #Skip buckets that are turned off
+    	$self->{distinct_buckets}->{ $name } = {
+    		accessor => $bucket->{accessor},
+    		duration => $bucket->{duration},
+    		weight   => $bucket->{weight},
+    		buckets  => $bucket->{buckets},
+    	};
+    }
+    
+    while (my ($name, $bucket) = each %interval_buckets) {
+    	next unless $new_profile->{buckets}->{ $name }; #Skip buckets that are turned off
+    	$self->{interval_buckets}->{ $name } = {
+    		accessor => $bucket->{accessor},
+    		duration => $bucket->{duration},
+    		weight   => $bucket->{weight},
+    		buckets  => {},
+    	};
+    }
+	
+	$self->{profile} = $new_profile;
 	
 	return 1;
 }
@@ -478,6 +486,8 @@ sub date_descend {
 		if (! $next_bucket_name) {
 			my $good = 1;
 			foreach my $bucket (values %$buckets) {
+				### Checking bucket: $bucket->{accessor}
+				
 				#Get the value for this bucket's access for the $new_date
 				my $cref = $new_date->can( $bucket->{accessor} );
 				my $datepart_val = &$cref($new_date);
@@ -485,12 +495,15 @@ sub date_descend {
 				#If the variation of this datepart from the mean is within the standard deviation, 
 				# this date ain't good.
 				if ( abs($datepart_val - $bucket->{mean}) > $bucket->{stdev} )  {
+					### Outside of stdev: $bucket->{stdev}
+					### Outside by: abs($datepart_val - $bucket->{mean})
 					$good = 0;
 				}
 			}
 			
 			#All the dateparts were good, push this date onto 
 			if ($good == 1) {
+				### Found prediction: $new_date->mdy('/')
 				push(@$predictions, $new_date);
 			}
 		}
@@ -526,12 +539,15 @@ sub date_descend {
 				#If the variation of this datepart from the mean is within the standard deviation, 
 				# this date ain't good.
 				if ( abs($datepart_val - $bucket->{mean}) > $bucket->{stdev} )  {
+					### Outside of stdev: $bucket->{stdev}
+					### Outside by: abs($datepart_val - $bucket->{mean})
 					$good = 0;
 				}
 			}
 			
 			#All the dateparts were good, push this date onto 
 			if ($good == 1) {
+				### Found prediction: $new_date->mdy('/')
 				push(@$predictions, $neg_new_date);
 			}
 		}

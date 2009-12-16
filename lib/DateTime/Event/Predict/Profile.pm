@@ -15,10 +15,18 @@ package DateTime::Event::Predict::Profile;
 
 our %PROFILES = ();
 
+$PROFILES{'default'} = {
+	buckets => {
+		'day_of_week'  => 1,
+		'day_of_month' => 1,
+		'day_of_year'  => 1,
+	},
+};
+
 $PROFILES{'holiday'} = {
-	buckets => [
-		'day_of_year',
-	],
+	buckets => {
+		'day_of_year' => 1,
+	},
 };
 
 1;

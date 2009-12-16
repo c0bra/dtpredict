@@ -3,8 +3,11 @@
 use strict;
 use lib qw( ../lib );
 use DateTime::Event::Predict;
+use Data::Dumper;
 
 my $dtp = new DateTime::Event::Predict;
+
+#warn Dumper($dtp); exit;
 
 open(my $fh, '<', 'easter_dates.txt') || die $!;
 while (my $line = <$fh>) {
@@ -32,5 +35,5 @@ my @predictions = $dtp->predict;
 
 print "PREDICTIONS:\n";
 foreach my $d (@predictions) {
-	print $d->mdy('/') . ' ' . $d->hms . "\n";
+	print $d->mdy('/') . "\n";
 }
