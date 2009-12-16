@@ -4,6 +4,10 @@ TODO list for Perl module DateTime::Even::Predict
 * Refactor incremental search method so it can be reused in both forward and backward searches
 * Due to possible DOS attack that can be done through very large duration operations (thousands
   of years in the future, etc), we'll need to add some sort of protection, I think.
+* BUG: Duplicate dates are coming back for predictions. There's needs to be a
+  hashmap or something that prevents duplicates.
+* Predictions are not coming out of predict() sorted by probability. We can measure total
+  variance to provide that.
 
 ??/??/????
 * Add a clustering() method so that clustering can be turned on or off whenever
