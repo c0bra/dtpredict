@@ -5,6 +5,7 @@ all_from 'lib/DateTime/Event/Predict.pm';
 author   'Brian Hann <brian.hann+dtp@gmail.com>';
 license  'perl';
 no_index directory => 'research';
+no_index file => 'IDEAS';
 
 perl_version_from 'lib/DateTime/Event/Predict.pm';
 

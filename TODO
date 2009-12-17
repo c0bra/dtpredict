@@ -1,13 +1,13 @@
 TODO list for Perl module DateTime::Even::Predict
 
+12/17/2009
+* Finish writing up pod so module can be alpha-released on CPAN
+* Write in hooks to predict() so we can check for stuff like the lunar cycle
+* Rewrite arguments for _date_descend so it's less ugly. Needs named options
+
 12/16/2009
-* Refactor incremental search method so it can be reused in both forward and backward searches
 * Due to possible DOS attack that can be done through very large duration operations (thousands
   of years in the future, etc), we'll need to add some sort of protection, I think.
-* BUG: Duplicate dates are coming back for predictions. There's needs to be a
-  hashmap or something that prevents duplicates.
-* Predictions are not coming out of predict() sorted by probability. We can measure total
-  variance to provide that.
 
 ??/??/????
 * Add a clustering() method so that clustering can be turned on or off whenever

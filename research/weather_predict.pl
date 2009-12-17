@@ -28,7 +28,7 @@ while (my $line = <$fh>) {
 }
 close($fh);
 
-my @predictions = $dtp->predict;
+my @predictions = $dtp->predict( max_predictions => 5 );
 
 print "PREDICTIONS:\n";
 foreach my $d (@predictions) {

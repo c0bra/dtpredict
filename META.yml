@@ -19,6 +19,8 @@ no_index:
     - inc
     - research
     - t
+  file:
+    - IDEAS
 requires:
   DateTime: 0
   Params::Validate: 0.91

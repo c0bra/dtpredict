@@ -47,7 +47,6 @@ sub new {
     	dates   		 => [],
     	distinct_buckets => {},
     	interval_buckets => {},
-    	epoch_intervals  => [], #**Probably won't need this any more
     	total_epoch_interval    => 0,
     	largest_epoch_interval  => 0,
     	smallest_epoch_interval => 0,
@@ -87,9 +86,8 @@ sub add_date {
 	my $self   = shift;
 	my ($date) = @_;
 	
-	validate_pos(@_, { isa => 'DateTime' }); #Or we could attempt to parse the date, or use can( epoch() );
+	validate_pos(@_, { isa => 'DateTime' }); #***Or we could attempt to parse the date, or use can( epoch() );
 	
-	## Adding date: $date->mdy('/') . ' ' . $date->hms
 	push(@{ $self->{dates} }, $date);
 	
 	return 1;
@@ -108,7 +106,7 @@ sub profile {
 	#Validate & set the profile
 	
 	my $new_profile;
-	#Preset profile
+	
 	if (Scalar::Util::blessed($profile) && $profile->can('bucket')) {
 		$new_profile = $profile;
 	}
@@ -125,16 +123,6 @@ sub profile {
     		buckets  => {},
     	};
     }
-    
-    #while (my ($name, $bucket) = each %interval_buckets) {
-    #	next unless $new_profile->bucket( $name ); #Skip buckets that are turned off
-    #	$self->{interval_buckets}->{ $name } = {
-    #		accessor => $bucket->accessor,
-    #		duration => $bucket->duration,
-    #		weight   => $bucket->weight,
-    #		buckets  => {},
-    #	};
-    #}
 	
 	$self->{profile} = $new_profile;
 	
@@ -185,7 +173,6 @@ sub train {
 		
 		#Add the epoch difference for poisson probabilities
 		my $epoch_interval = $date->hires_epoch() - $cur_date->hires_epoch();
-		push(@{ $self->{epoch_intervals} }, $epoch_interval);
 		$self->{total_epoch_interval} += $epoch_interval;
 		
 		$cur_date = $date;
@@ -198,9 +185,15 @@ sub train {
 }
 
 sub predict {
-	my $self    = shift;
-	my %options = @_;
+	my $self = shift;
+	my %opts = @_;
 	
+	validate(@_, {
+		max_predictions => { type => SCALAR, optional => 1 }, #How many predictions to return
+		hooks => { type => ARRAYREF, optional => 1 },
+	});
+	
+	#Train this set of dates if they're not already trained
 	unless ($self->_is_trained) { $self->train(); $self->{trained}++; }
 	
 	### Beginning prediction
@@ -237,10 +230,14 @@ sub predict {
 	my $first_bucket_name = shift @bucket_keys;
 	
 	### Start recursively descending down into the various date parts, searching in each one
-	$self->_date_descend($start_date, $first_bucket_name, \%buckets, \@bucket_keys, $stdev_limit, \%predictions);
+	$self->_date_descend($start_date, $first_bucket_name, \%buckets, \@bucket_keys, $stdev_limit, \%predictions, $opts{'max_predictions'});
 	
 	#Sort the predictions by their total deviation
 	my @predictions = sort { $a->{_date_deviation} <=> $b->{_date_deviation} } values %predictions;
+	
+	if ( $opts{'max_predictions'} ) {
+		#@predictions = @predictions[0 .. $opts{'max_predictions'}];
+	}
 	
 	return wantarray ? @predictions : $predictions[0];
 }
@@ -248,7 +245,9 @@ sub predict {
 #Descend down into the date parts
 sub _date_descend {
 	my $self = shift;
-	my ($date, $bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions) = @_;
+	my ($date, $bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions, $max_predictions) = @_;
+	
+	return if (scalar keys %$predictions) >= $max_predictions;
 	
 	### Operating on bucket: $bucket_name
 	
@@ -273,6 +272,8 @@ sub _date_descend {
 		
 		# Search forwards and backwards
 		foreach my $increment ($search_inc, $neg_search_inc) {
+			return if (scalar keys %$predictions) >= $max_predictions;
+			
 			#Make a duration object using the accessor for this bucket
 			my $duration_increment = new DateTime::Duration( $bucket->{duration} => $increment );
 			
@@ -307,16 +308,17 @@ sub _date_descend {
 					}
 				}
 				
-				#All the dateparts were good, push this date onto 
+				#All the dateparts were within their standard deviations, check for hooks and push this date into the set of predictions
 				if ($good == 1) {
 					### Found prediction: $new_date->mdy('/')
+					
 					$new_date->{_date_deviation} = $date_deviation;
 					$predictions->{ $new_date->hires_epoch() } = $new_date;
 				}
 			}
 			#If we're not at the smallest bucket, keep searching!
 			else {
-				$self->_date_descend($new_date, $next_bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions);
+				$self->_date_descend($new_date, $next_bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions, $max_predictions);
 			}
 		}
 	}
@@ -464,61 +466,7 @@ we can't be predicting a new date that's exactly 1 day after the most recent one
   ^ The best way to do this is probably to record intervals as epoch seconds, so everything is taken into account. Maybe record epoch seconds in addition
     to whole regular intervals like days & hours.
 
-=item *
-
-The predict method should take an argument that specifies how the result(s) are returned, and how many. For instance, we should be able to
-say we want the 5 best predictions, or all predictions that are at least n, where n is a measure of accuracy. We should also be able to
-specify that 
-
 =back
-
-=head1 IDEAS
-
-  DateTime::Event::Predict::Profile could be a subclass that defines bucket and weight profiles for certain types of predictions. For
-  instance, there could be a profile for log files (or different types of log files), for weather events, etc.
-
-  There could be a method similar to predict that you would give the expected prediction to. If the method does not predict that date
-  then maybe it could figure out what tinkering of weights (or other options) would be required to produce that prediction. *This would
-  probably be very hard.
-  
-  Maybe one way to do comparisons would be to take each date and do a diff between it and the dates before and after it (if there are any), then do
-  some kind of filtering based on that.
-  
-  NOTE: Okay, so we calculate all the poisson probabilities for the intervals that we want to predict for (days, months, etc), and then finding the best
-  fits (highest probabilities) we find the next date for that interval (add the interval onto the most recent date) and match it against the buckets to
-  see if it's a fit on any of them. Then we can add weights to the distinct buckets so that certain matches can be preferred over others.
-
-  IDEA: Create a custom accessor for "Week-segment", or even "work-week-segment", which would split the week up into parts, like Mon-Wed would be
-  beginning of work week, Tues-Thurs would be middle of work week, and Wed-Fri would be end of work week. Some dates would of course end up in multiple
-  places (i.e. Tues is both beginning and middle) however I think regression would allow a best-fit line to be made.
-  
-  *IDEA*: Maybe we can use distribution math for all the buckets, both distinct and interval, and use the standard deviation
-  of the values for each bucket to sort them (and maybe provide weights?), and then scan for new dates. We could also use the
-  variance of each scanned new date to determine if it falls within the margin of error, i.e. if we're search for the next date
-  of Easter and the standard deviation for "day_of_week" is 0, because all of them are on Sunday, then we know that any date
-  offered as a prediction but fall within that standard deviation, i.e. 0, and therefore MUST be Sunday.
-  
-  	NOTE: Predicting Easter completely accurately will be impossible because it depends on the moon phase. Without taking that
-  	into account (possible?) we won't get an accurate date
-  	
-  IDEA: It should be possible to pass in any (reasonable) number n of arbitrary attributes with which to identify dates. We just add them
-  on to the dimensions we already have in order to operate over them.
-  
-  IDEA: For finding a beginning search point in the future we can optionally prevent searching before the current date, so if,
-  say, there was an equal possibility of a predicted date being in a near-current cluster or a future cluster, if that current
-  cluster occured in the past and the option was set then the date would HAVE to be in the new cluster.
-
-  IDEA: If we assume that for any date-part, the data points follow a normal distribution, then for any given prediction
-  (supplied by the module or by the end-user) we can calculate the probability that that date part is correct (by its standard
-  deviation), and then for all the date parts we can use Bayes Theorem to combine their probabilities to determine the
-  complete probability for that particular date.
-  	SUPPLEMENT: It's also possible that we could combine the probabilities of multiple predicted dates to provide the overall probability
-  	of a field of date predictions.
-
-  NOTE: Actual cluster centroids (and comparisons to them) will have to defined through hires epoch time, but that should be OK.
-  
-  NOTE: By doing this tiered search where we go through each incremental possible date we are probably going to end up with a lareg
-  number of predictions if the standard deviations are of any decent size, although that depends on the enabled buckets.
  
 =head1 AUTHOR
 
@@ -558,7 +506,6 @@ L<http://cpanratings.perl.org/d/DateTime-Event-Predict>
 L<http://search.cpan.org/dist/DateTime-Event-Predict/>
 
 =back
-
 
 =head1 COPYRIGHT & LICENSE
 
