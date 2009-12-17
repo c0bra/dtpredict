@@ -15,15 +15,16 @@ package DateTime::Event::Predict;
 
 use strict;
 
-use Carp qw(carp croak);
+use Carp qw(carp croak confess);
 use DateTime;
-#use Params::Check;
 use Params::Validate qw(:all);
+use Scalar::Util;
+
 use Math::Counting;         #**Hopefully won't need this?
 use Math::Round qw(round);  #**Hopefully won't need this?
 use POSIX qw(ceil);
 use Data::Dumper;
-use Smart::Comments;
+#use Smart::Comments;
 
 use DateTime::Event::Predict::Profile;
 
@@ -234,8 +235,6 @@ our %interval_buckets = (
 our @distinct_bucket_accessors = map { $_->{accessor} } values %distinct_buckets; #Make a list of all the accessors so we can check for can() on each DateTime passed to us (***we'll only want to check accessors for buckets that have been turned on)
 our @interval_bucket_accessors = map { $_->{accessor} } values %interval_buckets;                                                                                          
 
-our $default_profile = 'holiday';
-
 #===============================================================================#
 
 sub new {
@@ -244,7 +243,7 @@ sub new {
     
     validate(@_, {
     	dates   => { type => ARRAYREF, optional => 1 },
-    	profile => { type => SCALAR,   optional => 1 },
+    	profile => { type => SCALAR | OBJECT, optional => 1 },
     });
     
     my $class = ref( $proto ) || $proto;
@@ -302,40 +301,44 @@ sub add_date {
 
 #Get or set the profile for this predictor
 sub profile {
-	my $self    = shift;
-	my $profile = shift; #$profile can be a string specifying a profile name that is provided by default, or a profile object
+	my $self      = shift;
+	my ($profile) = @_; #$profile can be a string specifying a profile name that is provided by default, or a profile object
 	
-	validate_pos(@_, { type => SCALAR, optional => 1 });
+	validate_pos(@_, { type => SCALAR | OBJECT, optional => 1 });
 	
 	#Get the profile
 	if (! defined $profile || ! $profile) { return $self->{profile}; }
 	
 	#Validate & set the profile
 	
-	my %profiles = %DateTime::Event::Predict::Profile::PROFILES;
-	
-	my $new_profile = $profiles{ $profile };
+	my $new_profile;
+	#Preset profile
+	if (Scalar::Util::blessed($profile) && $profile->can('bucket')) {
+		$new_profile = $profile;
+	}
+	else {
+		$new_profile = DateTime::Event::Predict::Profile->new( profile => $profile );
+	}
 	
 	#Add the buckets
-    while (my ($name, $bucket) = each %distinct_buckets) {
-    	next unless $new_profile->{buckets}->{ $name }; #Skip buckets that are turned off
-    	$self->{distinct_buckets}->{ $name } = {
-    		accessor => $bucket->{accessor},
-    		duration => $bucket->{duration},
-    		weight   => $bucket->{weight},
-    		buckets  => $bucket->{buckets},
-    	};
-    }
-    
-    while (my ($name, $bucket) = each %interval_buckets) {
-    	next unless $new_profile->{buckets}->{ $name }; #Skip buckets that are turned off
-    	$self->{interval_buckets}->{ $name } = {
-    		accessor => $bucket->{accessor},
-    		duration => $bucket->{duration},
-    		weight   => $bucket->{weight},
+    foreach my $bucket ( $new_profile->buckets() ) {
+    	$self->{distinct_buckets}->{ $bucket->name } = {
+    		accessor => $bucket->accessor,
+    		duration => $bucket->duration,
+    		weight   => $bucket->weight,
     		buckets  => {},
     	};
     }
+    
+    #while (my ($name, $bucket) = each %interval_buckets) {
+    #	next unless $new_profile->bucket( $name ); #Skip buckets that are turned off
+    #	$self->{interval_buckets}->{ $name } = {
+    #		accessor => $bucket->accessor,
+    #		duration => $bucket->duration,
+    #		weight   => $bucket->weight,
+    #		buckets  => {},
+    #	};
+    #}
 	
 	$self->{profile} = $new_profile;
 	
@@ -345,6 +348,8 @@ sub profile {
 sub train {
 	my $self = shift;
 	#***Add optional dates array param to predict from here, plus other config params?
+	
+	#warn Dumper($self);
 	
 	### Training
 	
@@ -396,12 +401,11 @@ sub train {
 	$self->{trained}++;
 }
 
-#***Ideally this will be the final, WORKABLE prediction method
 sub predict {
 	my $self    = shift;
 	my %options = @_;
 	
-	unless ($self->is_trained) { $self->train(); $self->{trained}++; }
+	unless ($self->_is_trained) { $self->train(); $self->{trained}++; }
 	
 	### Beginning prediction
 	
@@ -410,7 +414,7 @@ sub predict {
 	
 	#Figure the mean, variance, and standard deviation for each bucket
 	foreach my $bucket (values %buckets) {
-		my ($mean, $variance, $stdev) = $self->bucket_statistics($bucket);
+		my ($mean, $variance, $stdev) = $self->_bucket_statistics($bucket);
 		
 		$bucket->{mean}     = $mean;
 		$bucket->{variance} = $variance;
@@ -418,7 +422,6 @@ sub predict {
 	}
 	
 	my $most_recent_date = (sort { $b->hires_epoch() <=> $a->hires_epoch() } @{ $self->{dates} })[0];
-	### Got the most recent date: $most_recent_date->mdy('/')
 	
 	### Make a starting search date that has been moved ahead by the average interval beteween dates (in epoch seconds)
 	my $duration = new DateTime::Duration(
@@ -429,8 +432,8 @@ sub predict {
 	#Limit the number of standard deviations to look through
 	my $stdev_limit = 2;
 	
-	#A list of predictions that we'll push dates onto
-	my @predictions = ();
+	#A hash of predictions, dates are keyed by their hires_epoch() value
+	my %predictions = ();
 	
 	### #Get a list of buckets after sorting the buckets from largest interval to smallest (i.e. year->month->day->hour ... microsecond, etc)
 	my @bucket_keys = (sort { $self->{distinct_buckets}->{ $b }->{order} cmp $self->{distinct_buckets}->{ $a }->{order} } keys %buckets)[0];
@@ -438,13 +441,16 @@ sub predict {
 	my $first_bucket_name = shift @bucket_keys;
 	
 	### Start recursively descending down into the various date parts, searching in each one
-	$self->date_descend($start_date, $first_bucket_name, \%buckets, \@bucket_keys, $stdev_limit, \@predictions);
+	$self->_date_descend($start_date, $first_bucket_name, \%buckets, \@bucket_keys, $stdev_limit, \%predictions);
+	
+	#Sort the predictions by their total deviation
+	my @predictions = sort { $a->{_date_deviation} <=> $b->{_date_deviation} } values %predictions;
 	
 	return wantarray ? @predictions : $predictions[0];
 }
 
 #Descend down into the date parts
-sub date_descend {
+sub _date_descend {
 	my $self = shift;
 	my ($date, $bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions) = @_;
 	
@@ -466,102 +472,74 @@ sub date_descend {
 	}
 	
 	foreach my $search_inc ( 0 .. $search_range ) {
-		#=================
-		# Search forwards
-		#=================
-		
-		### Searching forward by increment: $search_inc
-		
-		#Make a duration object using the accessor for this bucket
-		my $duration_increment = new DateTime::Duration( $bucket->{duration} => $search_inc );
-		
-		#Get the new date
-		my $new_date = $date + $duration_increment;
-		
-		### Checking forward new date: $new_date->mdy('/') . ' ' . $new_date->hms
-		
-		#If we have no more buckets to search into, determine if this date is a good prediction
-		# by going through each bucket and comparing this date's deviation from that bucket's mean.
-		# If it is within the standard deviation for each bucket then consider it a good match
-		if (! $next_bucket_name) {
-			my $good = 1;
-			foreach my $bucket (values %$buckets) {
-				### Checking bucket: $bucket->{accessor}
-				
-				#Get the value for this bucket's access for the $new_date
-				my $cref = $new_date->can( $bucket->{accessor} );
-				my $datepart_val = &$cref($new_date);
-				
-				#If the variation of this datepart from the mean is within the standard deviation, 
-				# this date ain't good.
-				if ( abs($datepart_val - $bucket->{mean}) > $bucket->{stdev} )  {
-					### Outside of stdev: $bucket->{stdev}
-					### Outside by: abs($datepart_val - $bucket->{mean})
-					$good = 0;
-				}
-			}
-			
-			#All the dateparts were good, push this date onto 
-			if ($good == 1) {
-				### Found prediction: $new_date->mdy('/')
-				push(@$predictions, $new_date);
-			}
-		}
-		#If we're not at the smallest bucket, keep searching!
-		else {
-			$self->date_descend($new_date, $next_bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions);
-		}
-		
-		#==================
-		# Search backwards
-		#==================
-		
-		#Invert the search increment
+		# Make an inverted search increment
 		my $neg_search_inc = $search_inc * -1;
 		
-		### Searching forward by increment: $neg_search_inc
-		
-		#Make a duration object using the accessor for this bucket
-		my $neg_duration_increment = new DateTime::Duration( $bucket->{duration} => $neg_search_inc );
-		
-		#Create the new date by adding the duration increment to the date given
-		my $neg_new_date = $date + $neg_duration_increment;
-		
-		### Checking backward new date: $neg_new_date->mdy('/') . ' ' . $neg_new_date->hms
-		
-		if (! $next_bucket_name) {
-			my $good = 1;
-			foreach my $bucket (values %$buckets) {
-				#Get the value for this bucket's access for the $new_date
-				my $cref = $neg_new_date->can( $bucket->{accessor} );
-				my $datepart_val = &$cref($neg_new_date);
+		# Search forwards and backwards
+		foreach my $increment ($search_inc, $neg_search_inc) {
+			#Make a duration object using the accessor for this bucket
+			my $duration_increment = new DateTime::Duration( $bucket->{duration} => $increment );
+			
+			#Get the new date
+			my $new_date = $date + $duration_increment;
+			
+			### Checking forward new date: $new_date->mdy('/') . ' ' . $new_date->hms
+			
+			#If we have no more buckets to search into, determine if this date is a good prediction
+			# by going through each bucket and comparing this date's deviation from that bucket's mean.
+			# If it is within the standard deviation for each bucket then consider it a good match
+			if (! $next_bucket_name) {
+				my $good = 1;
+				my $date_deviation = 0;
+				foreach my $bucket (values %$buckets) {
+					### Checking bucket: $bucket->{accessor}
+					
+					#Get the value for this bucket's access for the $new_date
+					my $cref = $new_date->can( $bucket->{accessor} );
+					my $datepart_val = &$cref($new_date);
+					
+					#If the deviation of this datepart from the mean is within the standard deviation, 
+					# this date ain't good.
+					
+					my $deviation = abs($datepart_val - $bucket->{mean});
+					$date_deviation += $deviation;
+					
+					if ($deviation > $bucket->{stdev} )  {
+						### Outside of stdev: $bucket->{stdev}
+						### Outside by: abs($datepart_val - $bucket->{mean})
+						$good = 0;
+					}
+				}
 				
-				#If the variation of this datepart from the mean is within the standard deviation, 
-				# this date ain't good.
-				if ( abs($datepart_val - $bucket->{mean}) > $bucket->{stdev} )  {
-					### Outside of stdev: $bucket->{stdev}
-					### Outside by: abs($datepart_val - $bucket->{mean})
-					$good = 0;
+				#All the dateparts were good, push this date onto 
+				if ($good == 1) {
+					### Found prediction: $new_date->mdy('/')
+					$new_date->{_date_deviation} = $date_deviation;
+					$predictions->{ $new_date->hires_epoch() } = $new_date;
 				}
 			}
-			
-			#All the dateparts were good, push this date onto 
-			if ($good == 1) {
-				### Found prediction: $new_date->mdy('/')
-				push(@$predictions, $neg_new_date);
+			#If we're not at the smallest bucket, keep searching!
+			else {
+				$self->_date_descend($new_date, $next_bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions);
 			}
-		}
-		#If we're not at the smallest bucket, keep searching!
-		else {
-			$self->date_descend($neg_new_date, $next_bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions);
 		}
 	}
 	
 	return 1;
 }
 
+sub _search_increment {
+	my $self        = shift;
+	my $increment   = shift; #Increment to search by
+	my $bucket      = shift; #Bucket to search in
+	my $buckets     = shift; #A list of all buckets, in case we get a match
+	my $predictions = shift; #The predictions arrayref, in case we get a match
+	
+	
+}
+
 #Get the mean, variance, and standard deviation for a bucket
-sub bucket_statistics {
+sub _bucket_statistics {
 	my $self   = shift;
 	my $bucket = shift;
 	
@@ -591,20 +569,20 @@ sub bucket_statistics {
 	
 	return ($mean, $variance, $stdev);
 }
-    
-sub print_dates {
+
+sub _is_trained {
+	my $self = shift;
+	
+	return ($self->{trained} > 0) ? 1 : 0;
+}  
+
+sub _print_dates {
 	my $self = shift;
 	
 	foreach my $date (sort { $a->hires_epoch() <=> $b->hires_epoch() } @{ $self->{dates} }) {
 		print $date->mdy('/') . ' ' . $date->hms . "\n";
 	}
-}   
-    
-sub is_trained {
-	my $self = shift;
-	
-	return ($self->{trained} > 0) ? 1 : 0;
-}   
+} 
     
 1; # End of DateTime::Event::Predict
     
@@ -662,13 +640,9 @@ Adds a date on to the list of dates in the instance, where C<$date> is a L<DateT
 
 Arguments: $profile
 
-Set the profile for which buckets will be turned on and what their weights will be
-
-	my $profile = (
-		buckets => {},
-		proximity => 1, #Whether dates in close proximity to one another cause each other to be weighted more heavily
-	);
-
+Set the profile for which date-parts will be 
+	
+	
 	$dtp->profile($profile);
 
 =head2 predict
@@ -676,6 +650,7 @@ Set the profile for which buckets will be turned on and what their weights will 
 Predict the next date from the dates in this instance
 
 	my $next_date = $dtp->predict();
+	
 	
 =head1 TODO
 

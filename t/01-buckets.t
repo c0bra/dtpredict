@@ -1,10 +1,8 @@
 #!perl -T
 
 use strict;
-use warnings;
 
-use Test::Simple tests => 2;
+use Test::More tests => 0;
 
 use DateTime::Event::Predict;
-
 

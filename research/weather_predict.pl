@@ -7,9 +7,7 @@ use Data::Dumper;
 
 use DateTime::Event::Predict;
 
-my $dtp = new DateTime::Event::Predict(
-	profile => 'holiday',
-);
+my $dtp = new DateTime::Event::Predict( profile => 'holiday' );
 
 #warn Dumper($dtp); exit;
 
@@ -34,5 +32,5 @@ my @predictions = $dtp->predict;
 
 print "PREDICTIONS:\n";
 foreach my $d (@predictions) {
-	print $d->mdy('/') . "\n";
+	print $d->mdy('/') . ' : ' . $d->{_date_deviation} . "\n";
 }

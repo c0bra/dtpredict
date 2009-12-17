@@ -4,7 +4,7 @@
 # DateTime::Event::Predict::Profile
 #
 # DESCRIPTION
-#   Provides default profiles 
+#   Provides default profiles and mechanisms for creating custom profiles
 #
 # AUTHORS
 #   Brian Hann
@@ -13,21 +13,260 @@
 
 package DateTime::Event::Predict::Profile;
 
-our %PROFILES = ();
+use Params::Validate qw(:all);
+use Carp qw( croak confess );
 
-$PROFILES{'default'} = {
-	buckets => {
-		'day_of_week'  => 1,
-		'day_of_month' => 1,
-		'day_of_year'  => 1,
+our %PROFILES = (
+	default => {
+		buckets => [qw/
+			day_of_week
+			day_of_month
+			day_of_year
+		/],
 	},
-};
+	holiday => {
+		buckets => [qw/
+			day_of_year
+		/],
+	},
+);
 
-$PROFILES{'holiday'} = {
-	buckets => {
-		'day_of_year' => 1,
+our %BUCKETS = (
+	nanosecond => {
+		accessor => 'nanosecond',
+		duration => 'nanoseconds',
+		order    => 1,
 	},
-};
+	microsecond => {
+		accessor => 'microsecond',
+		order    => 2,
+	},
+	millisecond => {
+		accessor => 'millisecond',
+		order    => 3,
+	},
+    second => {
+    	accessor => 'second', #DateTime accessor method for this bucket
+    	on		 => 0,        #Whether this bucket is on by default
+    	weight   => 0,        #The influence this bucket has on results,
+    	order    => 4,
+    },
+    fractional_second => {
+		accessor => 'fractional_second',
+		order    => 5,
+	},
+    minute => {
+    	accessor => 'minute',
+    	duration => 'minutes',
+    	order    => 6,
+   	},
+    hour => {
+    	accessor => 'hour',
+    	duration => 'hours',
+    	order    => 7,
+    },
+    day_of_week => {
+    	accessor => 'day_of_week',
+    	duration => 'days',
+    	order    => 8,
+    },
+    day_of_month => {
+    	accessor => 'day',
+    	duration => 'days',
+    	order    => 9,
+    },
+    day_of_quarter => {
+    	accessor => 'day_of_quarter',
+    	duration => 'days',
+    	order    => 10,
+    },
+    weekday_of_month => {
+    	accessor => 'weekday_of_month', #Returns a number from 1..5 indicating which week day of the month this is. For example, June 9, 2003 is the second Monday of the month, and so this method returns 2 for that day.
+    	duration => 'days',
+    	order    => 11,
+    },
+    week_of_month => {
+    	accessor => 'week_of_month',
+    	duration => 'weeks',
+    	order    => 12,
+    },	
+    day_of_year => {
+    	accessor => 'day_of_year',
+    	duration => 'days',
+    	order    => 13,
+    },
+    month_of_year => {
+    	accessor => 'month',
+    	duration => 'months',
+    	order    => 14,
+    },
+    quarter_of_year => {
+    	accessor => 'quarter',
+    	duration => 'quarters', #I don't think this duration exists
+    	order    => 15,
+    },
+);
+
+#Aliases
+$BUCKETS{'second_of_minute'} = $BUCKETS{'second'};
+$BUCKETS{'minute_of_hour'}   = $BUCKETS{'minute'};
+$BUCKETS{'hour_of_day'}   	 = $BUCKETS{'hour'};
+
+sub new {
+    my $proto = shift;
+    my %opts  = @_;
+    
+    validate(@_, {
+    	profile => { type => SCALAR, optional   => 1 }, #Preset profile
+    	buckets => { type => ARRAYREF, optional => 1 }, #Custom bucket definitions
+    });
+    
+    my $class = ref( $proto ) || $proto;
+    
+    my $self = {};
+    
+    $self->{buckets} = {};
+    
+    if ( $opts{'profile'} ) {
+    	if ( exists $PROFILES{ $opts{'profile'} } ) {
+    		$opts{'buckets'} = $PROFILES{ $opts{'profile'} }->{buckets};
+    	}
+    	else {
+    		confess("Undefined profile: '" . $opts{profile} . "' provided");
+    	}
+    }
+    elsif ( ! $opts{'buckets'} ) {
+    	confess("Must specify either a profile or a custom set of buckets");
+    }
+    
+    foreach my $bucket_name (@{ $opts{'buckets'} }) {
+		my $bucket = new DateTime::Event::Predict::Profile::Bucket(
+			name => $bucket_name,
+		);
+		
+		$self->{buckets}->{ $bucket_name } = $bucket;
+	}
+    
+    bless($self, $class);
+    
+    return $self;
+}
+
+sub bucket {
+	my $self   = shift;
+	my $bucket = shift;
+	
+	validate_pos(@_, { type => SCALAR, optional => 1 });
+	
+	if (! defined $self->{buckets}->{ $bucket } || ! $self->{buckets}->{ $bucket }) {
+		return;
+	}
+	
+	return $self->{buckets}->{ $bucket };
+}
+
+sub buckets {
+	my $self    = shift;
+	my @buckets = @_;
+	
+	my @to_return = ();
+	if (@buckets) {
+		@to_return = @{ $self->{buckets} }{ @buckets };
+	}
+	else {
+		@to_return = values %{$self->{buckets}};
+	}
+	
+	return wantarray ? @to_return : \@to_return;
+}
+
+1;
+
+package DateTime::Event::Predict::Profile::Bucket;
+
+use Params::Validate qw(:all);
+use Carp qw( croak confess );
+
+sub new {
+    my $proto = shift;
+    my %opts  = @_;
+    
+    validate(@_, {
+    	name => { type => SCALAR, optional => 0 },
+    	on   => { type => SCALAR, default  => 1 },
+    });
+    
+    my $class = ref( $proto ) || $proto;
+    
+    unless (exists $BUCKETS{ $opts{'name'} }) {
+		confess("Undefined bucket: '$name' provided");
+	}
+    
+    my $self = \%opts;
+    
+    $self->{bucket} = $BUCKETS{ $opts{'name'} };
+	$self->{weight} = ""; #Not used yet
+    
+    bless($self, $class);
+    
+    return $self;
+}
+
+sub name {
+	my $self = shift;
+	
+	return $self->{name};
+}
+
+sub accessor {
+	my $self = shift;
+	
+	return $self->{bucket}->{accessor};
+}
+
+sub order {
+	my $self = shift;
+	
+	return $self->{bucket}->{order};
+}
+
+sub duration {
+	my $self = shift;
+	
+	return $self->{bucket}->{duration};
+}
+
+sub weight {
+	my $self = shift;
+	
+	return $self->{bucket}->{weight};
+}
+
+#Get or set whether this bucket is on or not
+sub on {
+	my $self = shift;
+	my ($on) = @_;
+	
+	if (defined $on) {
+		$self->{on} = ($on) ? 1 : 0;
+	}
+	else {
+		return ($self->{on}) ? 1 : 0;
+	}
+}
+
+#Reverse of on()
+sub off {
+	my $self = shift;
+	my ($off) = @_;
+	
+	if (defined $off) {
+		$self->{on} = ($off) ? 0 : 1;
+	}
+	else {
+		return ($self->{on}) ? 0 : 1;
+	}
+}
 
 1;
 
@@ -37,33 +276,22 @@ __END__
 
 =head1 NAME
 
-DateTime::Event::Predict::Profile - Provides default profiles for use with DateTime::Event::Predict
+DateTime::Event::Predict::Profile - Provides default profiles for use with DateTime::Event::Predict,
+and mechanisms for making custom profiles
 
 =head1 SYNOPSIS
 
-Given a set of dates this module will predict the next date or dates to follow.
+	use DateTime::Event::Predict::Profile;
 
-Perhaps a little code snippet.
+	my $profile = new DateTime::Event::Predict::Profile(
+		buckets => [qw/ day_of_month /],
+	);
 
-    use DateTime::Event::Predict;
-
-    my $dtp = DateTime::Event::Predict->new();
-    
-    my $date = new DateTime->today();
-    
-    $dtp->add_date($date);
-    
-    $dtp->predict;
-
-=head1 PROFILES
-
-=head1 TODO
-
-* Make this object oriented?
+	$profile->bucket('day_of_month')->off(1);
 
 =head1 AUTHOR
 
-Brian Hann, C<< <brian.hann+dtp at gmail.com> >>
+Brian Hann, C<< <brian.hann at gmail.com> >>
 
 =head1 BUGS
 
