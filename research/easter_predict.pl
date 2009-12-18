@@ -18,7 +18,7 @@ while (my $line = <$fh>) {
     $dom  =~ s/\s//g;
     my ($month, $day) = split(m!/!, $dom);
 
-    #print "$month / $day / $year\n";
+    #print "$month/$day/$year\n";
 
     next if $year > 2009 || $year < 1975;
 
@@ -30,6 +30,8 @@ while (my $line = <$fh>) {
 
     $dtp->add_date($dt);
 }
+
+$dtp->_print_dates;
 
 my @predictions = $dtp->predict;
 

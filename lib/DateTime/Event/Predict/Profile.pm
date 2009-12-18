@@ -15,102 +15,146 @@ package DateTime::Event::Predict::Profile;
 
 use Params::Validate qw(:all);
 use Carp qw( croak confess );
+use Data::Dumper;
 
 our %PROFILES = (
 	default => {
-		buckets => [qw/
-			day_of_week
-			day_of_month
-			day_of_year
-		/],
+		buckets => [
+			'day_of_week',
+			'day_of_month',
+			'day_of_year',
+		],
 	},
 	holiday => {
-		buckets => [qw/
-			day_of_year
-		/],
+		buckets => [
+			'day_of_year'
+		],
+	},
+	daily => {
+		buckets => [
+			'day_of_year'
+		],
 	},
 );
 
 our %BUCKETS = (
-	nanosecond => {
+	nanosecond => DateTime::Event::Predict::Profile::Bucket->new(
+		name     => 'nanosecond',
 		accessor => 'nanosecond',
 		duration => 'nanoseconds',
+		trimmable => 1,
 		order    => 1,
-	},
-	microsecond => {
-		accessor => 'microsecond',
-		order    => 2,
-	},
-	millisecond => {
-		accessor => 'millisecond',
-		order    => 3,
-	},
-    second => {
-    	accessor => 'second', #DateTime accessor method for this bucket
-    	on		 => 0,        #Whether this bucket is on by default
-    	weight   => 0,        #The influence this bucket has on results,
+	),
+	#microsecond => DateTime::Event::Predict::Profile::Bucket->new(
+	#	name     => 'microsecond',
+	#	accessor => 'microsecond',
+	#	duration => 'microseconds',
+	#	order    => 2,
+	#),
+	#millisecond => DateTime::Event::Predict::Profile::Bucket->new(
+	#	name	 => 'millisecond',
+	#	accessor => 'millisecond',
+	#	duration => 'milliseconds',
+	#	order    => 3,
+	#),
+    second => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'second',
+    	accessor => 'second',
+    	duration => 'seconds',
+    	trimmable => 1,
     	order    => 4,
-    },
-    fractional_second => {
-		accessor => 'fractional_second',
-		order    => 5,
-	},
-    minute => {
+    ),
+    #fractional_second => DateTime::Event::Predict::Profile::Bucket->new(
+	#	accessor => 'fractional_second',
+	#	order    => 5,
+	#),
+    minute => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'minute',
     	accessor => 'minute',
     	duration => 'minutes',
+    	trimmable => 1,
     	order    => 6,
-   	},
-    hour => {
+   	),
+    hour => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'hour',
     	accessor => 'hour',
     	duration => 'hours',
+    	trimmable => 1,
     	order    => 7,
-    },
-    day_of_week => {
+    ),
+    day_of_week => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'day_of_week',
     	accessor => 'day_of_week',
     	duration => 'days',
+    	trimmable => 0,
     	order    => 8,
-    },
-    day_of_month => {
+    ),
+    day_of_month => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'day_of_month',
     	accessor => 'day',
     	duration => 'days',
+    	trimmable => 1,
     	order    => 9,
-    },
-    day_of_quarter => {
+    ),
+    day_of_quarter => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'day_of_quarter',
     	accessor => 'day_of_quarter',
     	duration => 'days',
+    	trimmable => 0,
     	order    => 10,
-    },
-    weekday_of_month => {
-    	accessor => 'weekday_of_month', #Returns a number from 1..5 indicating which week day of the month this is. For example, June 9, 2003 is the second Monday of the month, and so this method returns 2 for that day.
+    ),
+    weekday_of_month => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'weekday',
+    	accessor => 'weekday', #Returns a number from 1..5 indicating which week day of the month this is. For example, June 9, 2003 is the second Monday of the month, and so this method returns 2 for that day.
     	duration => 'days',
+    	trimmable => 0,
     	order    => 11,
-    },
-    week_of_month => {
+    ),
+    week_of_month => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'week_of_month',
     	accessor => 'week_of_month',
     	duration => 'weeks',
+    	trimmable => 0,
     	order    => 12,
-    },	
-    day_of_year => {
+    ),
+    day_of_year => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'day_of_year',
     	accessor => 'day_of_year',
     	duration => 'days',
+    	trimmable => 0,
     	order    => 13,
-    },
-    month_of_year => {
+    ),
+    week_number => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'week_number',
+    	accessor => 'week_number',
+    	duration => 'weeks',
+    	trimmable => 0,
+    	order    => 14,
+    ),
+    month_of_year => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'month_of_year',
     	accessor => 'month',
     	duration => 'months',
-    	order    => 14,
-    },
-    quarter_of_year => {
+    	trimmable => 1,
+    	order    => 15,
+    ),
+    quarter_of_year => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'quarter_of_year',
     	accessor => 'quarter',
     	duration => 'quarters', #I don't think this duration exists
-    	order    => 15,
-    },
+    	trimmable => 0,
+    	order    => 16,
+    ),
 );
 
 #Aliases
 $BUCKETS{'second_of_minute'} = $BUCKETS{'second'};
 $BUCKETS{'minute_of_hour'}   = $BUCKETS{'minute'};
 $BUCKETS{'hour_of_day'}   	 = $BUCKETS{'hour'};
+$BUCKETS{'week_of_year'}   	 = $BUCKETS{'week_number'};
+
+
+#===============================================================================#
 
 sub new {
     my $proto = shift;
@@ -140,9 +184,7 @@ sub new {
     }
     
     foreach my $bucket_name (@{ $opts{'buckets'} }) {
-		my $bucket = new DateTime::Event::Predict::Profile::Bucket(
-			name => $bucket_name,
-		);
+		my $bucket = $BUCKETS{ $bucket_name }->clone;
 		
 		$self->{buckets}->{ $bucket_name } = $bucket;
 	}
@@ -191,20 +233,24 @@ sub new {
     my $proto = shift;
     my %opts  = @_;
     
-    validate(@_, {
-    	name => { type => SCALAR, optional => 0 },
-    	on   => { type => SCALAR, default  => 1 },
+    %opts = validate(@_, {
+    	name      => { type => SCALAR },
+    	order     => { type => SCALAR }, 
+    	accessor  => { type => SCALAR }, 
+    	duration  => { type => SCALAR },
+    	trimmable => { type => SCALAR },
+    	on        => { type => SCALAR, default => 1 },
     });
     
     my $class = ref( $proto ) || $proto;
     
-    unless (exists $BUCKETS{ $opts{'name'} }) {
-		confess("Undefined bucket: '$name' provided");
-	}
+    #unless (exists $BUCKETS{ $opts{'name'} }) {
+	#	confess("Undefined bucket: '" . $opts{'name'} . "' provided");
+	#}
     
     my $self = \%opts;
     
-    $self->{bucket} = $BUCKETS{ $opts{'name'} };
+    #$self->{bucket} = $BUCKETS{ $opts{'name'} };
 	$self->{weight} = ""; #Not used yet
     
     bless($self, $class);
@@ -221,25 +267,31 @@ sub name {
 sub accessor {
 	my $self = shift;
 	
-	return $self->{bucket}->{accessor};
+	return $self->{accessor};
 }
 
 sub order {
 	my $self = shift;
 	
-	return $self->{bucket}->{order};
+	return $self->{order};
 }
 
 sub duration {
 	my $self = shift;
 	
-	return $self->{bucket}->{duration};
+	return $self->{duration};
+}
+
+sub trimmable {
+	my $self = shift;
+	
+	return $self->{trimmable};
 }
 
 sub weight {
 	my $self = shift;
 	
-	return $self->{bucket}->{weight};
+	return $self->{weight};
 }
 
 #Get or set whether this bucket is on or not
@@ -267,6 +319,8 @@ sub off {
 		return ($self->{on}) ? 0 : 1;
 	}
 }
+
+sub clone { bless { %{ $_[0] } }, ref $_[0] }
 
 1;
 

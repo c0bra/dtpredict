@@ -50,7 +50,7 @@ sub new {
     	total_epoch_interval    => 0,
     	largest_epoch_interval  => 0,
     	smallest_epoch_interval => 0,
-    	mean_epoc_interval      => 0,
+    	mean_epoch_interval     => 0,
     	
     	#Whether this data set has been trained or not
     	trained => 0,
@@ -74,6 +74,7 @@ sub dates {
 	if (! defined $dates) { return $self->{dates}; }
 	elsif (defined $dates) {
 		foreach my $date (@$dates) {
+			$self->_trim_dates( $date );
 			$self->add_date($date);
 		}
 	}
@@ -87,6 +88,8 @@ sub add_date {
 	my ($date) = @_;
 	
 	validate_pos(@_, { isa => 'DateTime' }); #***Or we could attempt to parse the date, or use can( epoch() );
+	
+	$self->_trim_dates( $date );
 	
 	push(@{ $self->{dates} }, $date);
 	
@@ -132,8 +135,6 @@ sub profile {
 sub train {
 	my $self = shift;
 	#***Add optional dates array param to predict from here, plus other config params?
-	
-	#warn Dumper($self);
 	
 	### Training
 	
@@ -189,9 +190,13 @@ sub predict {
 	my %opts = @_;
 	
 	validate(@_, {
-		max_predictions => { type => SCALAR, optional => 1 }, #How many predictions to return
-		hooks => { type => ARRAYREF, optional => 1 },
+		max_predictions => { type => SCALAR,   optional => 1 }, #How many predictions to return
+		hooks           => { type => ARRAYREF, optional => 1 },
 	});
+	
+	if (! defined $opts{'max_predictions'}) {
+		$opts{'max_predictions'} = 1 if ! wantarray;
+	}
 	
 	#Train this set of dates if they're not already trained
 	unless ($self->_is_trained) { $self->train(); $self->{trained}++; }
@@ -230,14 +235,20 @@ sub predict {
 	my $first_bucket_name = shift @bucket_keys;
 	
 	### Start recursively descending down into the various date parts, searching in each one
-	$self->_date_descend($start_date, $first_bucket_name, \%buckets, \@bucket_keys, $stdev_limit, \%predictions, $opts{'max_predictions'});
+	$self->_date_descend(
+		%opts,
+		
+		date        	 => $start_date,
+		most_recent_date => $most_recent_date,
+		bucket_name 	 => $first_bucket_name,
+		buckets     	 => \%buckets,
+		bucket_keys 	 => \@bucket_keys,
+		stdev_limit 	 => $stdev_limit,
+		predictions 	 => \%predictions,
+	);
 	
 	#Sort the predictions by their total deviation
 	my @predictions = sort { $a->{_date_deviation} <=> $b->{_date_deviation} } values %predictions;
-	
-	if ( $opts{'max_predictions'} ) {
-		#@predictions = @predictions[0 .. $opts{'max_predictions'}];
-	}
 	
 	return wantarray ? @predictions : $predictions[0];
 }
@@ -245,9 +256,29 @@ sub predict {
 #Descend down into the date parts
 sub _date_descend {
 	my $self = shift;
-	my ($date, $bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions, $max_predictions) = @_;
+	my %opts = @_;
 	
-	return if (scalar keys %$predictions) >= $max_predictions;
+	validate(@_, {
+		date        	 => { isa => 'DateTime' },				# The date to start searching in
+		most_recent_date => { isa => 'DateTime' },
+		bucket_name 	 => { type => SCALAR },					# The bucket (date-part) to start searching in
+		buckets     	 => { type => HASHREF },					# A hashref of all buckets to use when looking for good predictions
+		bucket_keys 	 => { type => ARRAYREF },				# A list of bucket names that we shift out of to get the next bucket to use
+		stdev_limit 	 => { type => SCALAR },					# The limit of how many standard deviations to search through
+		predictions 	 => { type => HASHREF },					# A hashref of predictions we find
+		max_predictions  => { type => SCALAR,   optional => 1 }, # The maxmimum number of predictions to return (prevents overly long searches)
+		hooks 			 => { type => ARRAYREF, optional => 1 }, # A list of custom coderefs that are called on each possible prediction
+	});	
+	
+	my $date 			= delete $opts{'date'};        # Delete these ones out as we'll be overwriting them below
+	my $bucket_name 	= delete $opts{'bucket_name'};
+	my $buckets 		= $opts{'buckets'};
+	my $bucket_keys 	= $opts{'bucket_keys'};
+	my $stdev_limit 	= $opts{'stdev_limit'};
+	my $predictions 	= $opts{'predictions'};
+	my $max_predictions = $opts{'max_predictions'};
+	
+	return if defined $max_predictions && (scalar keys %$predictions) >= $max_predictions;
 	
 	### Operating on bucket: $bucket_name
 	
@@ -267,18 +298,29 @@ sub _date_descend {
 	}
 	
 	foreach my $search_inc ( 0 .. $search_range ) {
-		# Make an inverted search increment
+		# Make an inverted search increment so we can search backwards
 		my $neg_search_inc = $search_inc * -1;
 		
-		# Search forwards and backwards
-		foreach my $increment ($search_inc, $neg_search_inc) {
-			return if (scalar keys %$predictions) >= $max_predictions;
+		# Put forwards and backwards in the searches
+		my @searches = ($search_inc, $neg_search_inc);
+		
+		# Make sure we only search on 0 once (i.e. 0 * -1 == 0)
+		@searches = (0) if $search_inc == 0;
+		
+		foreach my $increment (@searches) {
+			return if defined $max_predictions && (scalar keys %$predictions) >= $max_predictions;
 			
-			#Make a duration object using the accessor for this bucket
+			# Make a duration object using the accessor for this bucket
 			my $duration_increment = new DateTime::Duration( $bucket->{duration} => $increment );
 			
-			#Get the new date
+			# Get the new date
 			my $new_date = $date + $duration_increment;
+			$self->_trim_date( $new_date );
+			
+			# Skip this date if it's before the most recent date
+			if (DateTime->compare( $new_date, $opts{'most_recent_date'} ) <= 0) { # New date is before the most recent one, or is same as most recent one
+				next;
+			}
 			
 			### Checking forward new date: $new_date->mdy('/') . ' ' . $new_date->hms
 			
@@ -318,7 +360,11 @@ sub _date_descend {
 			}
 			#If we're not at the smallest bucket, keep searching!
 			else {
-				$self->_date_descend($new_date, $next_bucket_name, $buckets, $bucket_keys, $stdev_limit, $predictions, $max_predictions);
+				$self->_date_descend(
+					%opts,
+					date        => $new_date,
+					bucket_name => $next_bucket_name,
+				);
 			}
 		}
 	}
@@ -380,7 +426,30 @@ sub _print_dates {
 	foreach my $date (sort { $a->hires_epoch() <=> $b->hires_epoch() } @{ $self->{dates} }) {
 		print $date->mdy('/') . ' ' . $date->hms . "\n";
 	}
-} 
+}
+
+# Trim the date parts that are smaller than the smallest one we care about
+sub _trim_dates {
+	my $self    = shift;
+	my (@dates) = @_;
+	
+	# Get the smallest bucket we have turned on
+	my @buckets = (sort { $a->order <=> $b->order } grep { $_->on && $_->trimmable } $self->profile->buckets)[0];
+	my $smallest_bucket = @buckets[0];
+	
+	return if ! defined $smallest_bucket || ! $smallest_bucket || ! @buckets;
+	
+	#warn "ORDERED BUCKETS: " . Dumper($self->profile->buckets) . "\n";
+	
+	foreach my $date (@dates) {
+		confess "Can't time a non-DateTime value" unless $date->isa( 'DateTime' );
+		
+		foreach my $bucket (grep { $_->trimmable && ($_->order < $smallest_bucket->order) } values %DateTime::Event::Predict::Profile::BUCKETS) {
+			$date->set( $bucket->accessor => 0 );
+		}
+	}
+}
+sub _trim_date { return &_trim_dates(@_); }
     
 1; # End of DateTime::Event::Predict
     
@@ -396,17 +465,36 @@ DateTime::Event::Predict - Predict new dates from a set of dates
 
 Given a set of dates this module will predict the next date or dates to follow.
 
-Perhaps a little code snippet.
+  use DateTime::Event::Predict;
 
-    use DateTime::Event::Predict;
+  my $dtp = DateTime::Event::Predict->new();
 
-    my $dtp = DateTime::Event::Predict->new();
-    
-    my $date = new DateTime->today();
-    
-    $dtp->add_date($date);
-    
-    $dtp->predict;
+  # Add todays date: 2009-12-17
+  my $date = new DateTime->today();
+  $dtp->add_date($date);
+
+  # Add the previous 5 days
+  for  (1 .. 5) {
+      my $new_date = $date->clone->add(
+          days => ($_ * -1),
+      );
+
+      $dtp->add_date($new_date);
+  }
+
+  #Predict the next date
+  my $predicted_date = $dtp->predict;
+
+  print $predicted_date->ymd;
+
+  # 2009-12-18
+  
+Here we create a new C<DateTime> object with today's date (it being December 17th, 2009 currently). We
+then add that on the list of dates that C<DateTime::Event::Predict> will use to make the prediction.
+
+We also tack on the 5 previous days (December 16-11). Afterwards, we call L<predict>
+  
+=head1 EXAMPLES
 
 =head1 METHODS
 
@@ -439,17 +527,55 @@ Adds a date on to the list of dates in the instance, where C<$date> is a L<DateT
 Arguments: $profile
 
 Set the profile for which date-parts will be 
-	
-	
-	$dtp->profile($profile);
+
+  # Pass in preset profile by name
+  $dtp->profile( profile => 'default' );
+  $dtp->profile( profile => 'holiday' );
+
+  # Create a new profile
+  my $profile = new DateTime::Event::Predict::Profile(
+      buckets => [qw/ minute hour day_of_week day_of_month /],
+  );
+
+  $dtp->profile( profile => $profile );
+
+=head3 Provided profiles
+
+The following profiles are provided for use by-name:
 
 =head2 predict
 
-Predict the next date from the dates in this instance
+Arguments: %options
 
-	my $next_date = $dtp->predict();
+Return Value: $next_date | @next_dates
+
+Predict the next date(s) from the dates supplied.
+
+  my $predicted_date = $dtp->predict();
+  
+If list context C<predict> returns a list of all the predictions, sorted by their probability:
+
+  my @predicted_dates = $dtp->predict();
+  
+The number of prediction can be limited with the C<max_predictions> option.
 	
-	
+Possible options
+
+  $dtp->predict(
+      max_predictions => 4, # Once 4 predictions are found, return back
+      hooks          => [
+          sub { return ($_->second % 4) ? 0 : 1 } # Only predict dates with second values that are divisible by four.
+      ],
+  );
+
+=item max_predictions
+
+Maximum number of predictions to find.
+
+=item hooks
+
+Arrayref of subroutine callbacks. If any of them return a false value the date will not be returned as a prediction.
+
 =head1 TODO
 
 =over
