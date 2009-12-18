@@ -145,6 +145,13 @@ our %BUCKETS = (
     	trimmable => 0,
     	order    => 16,
     ),
+    year => DateTime::Event::Predict::Profile::Bucket->new(
+    	name	 => 'year',
+    	accessor => 'year',
+    	duration => 'years', #I don't think this duration exists
+    	trimmable => 0,
+    	order    => 17,
+    ),
 );
 
 #Aliases

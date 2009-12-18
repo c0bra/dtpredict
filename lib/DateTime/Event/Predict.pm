@@ -22,7 +22,7 @@ use Scalar::Util;
 
 use POSIX qw(ceil);
 use Data::Dumper;
-#use Smart::Comments;
+use Smart::Comments;
 
 use DateTime::Event::Predict::Profile;
 
@@ -487,7 +487,8 @@ sub _trim_dates {
 		
 		#foreach my $bucket (grep { $_->trimmable && ($_->order < $smallest_bucket->order) } values %DateTime::Event::Predict::Profile::BUCKETS) {
 		foreach my $bucket (grep { $_->order < $smallest_bucket->order } values %DateTime::Event::Predict::Profile::BUCKETS) {
-			$date->truncate( to => $smallest_bucket->accessor );
+			# Clone the date so we don't modify anything we shouldn't
+			$date->clone->truncate( to => $smallest_bucket->accessor );
 		}
 	}
 }
@@ -534,16 +535,44 @@ Given a set of dates this module will predict the next date or dates to follow.
   print $predicted_date->ymd;
 
   # 2009-12-18
-  
-Here we create a new C<DateTime> object with today's date (it being December 17th, 2009 currently). We
-then add that on the list of dates that C<DateTime::Event::Predict> (DTP) will use to make the prediction.
 
-We also tack on the 14 previous days (December 16-11). Afterwards, we call L<predict> which returns a
-DateTime object representing the date DTP has calculated to come next.
-  
+Here we create a new C<DateTime> object with today's date (it being December 17th, 2009 currently). We
+then use L<add_date|add_date> to add it onto the list of dates that C<DateTime::Event::Predict> (DTP)
+will use to make the prediction.
+
+Then we take the 14 previous days (December 16-11) and them on to same list one by one. This gives us a
+good set to make a prediction out of.
+
+Finally we call L<predict|predict> which returns a C<DateTime> object representing the date that DTP has
+calculated will come next.
+
+=head1 HOW IT WORKS
+
+Predicting the future is not easy, as anyone except, perhaps, Nostradamus will tell you. Events can occur
+with perplexing randomness and discerning any pattern in the noise is nigh unpossible.
+
+However, if you have a set of data to work with that you know for certain contains some sort of
+regularity, and you have enough information to discover that regularity, then making predictions from
+that set can be possible. The main issue with our example above is the tuning we did with this sort
+of information.
+
+When you configure your instance of DTP, you will have to tell what sorts of date-parts to keep
+track of so that it has a good way of making a prediction. Date-parts can be things like
+"day of the week", "day of the year", "is a weekend day", "week on month", "month of year", differences
+between dates counted by "week", or "month", etc. Dtpredict will collect these identifiers from all the
+provided dates into "buckets" for processing later on.
+
+
+
 =head1 EXAMPLES
 
+=over
+
 =item Predicting Easter
+
+=item Predicting 
+
+=back
 
 =head1 METHODS
 
