@@ -1,8 +1,14 @@
 TODO list for Perl module DateTime::Even::Predict
 
+12/18/2009
+* Change trim code so that it uses the truncate() method from DateTime.
+* I think we'll need to add the interval_buckets back in
+* Is there a way to use import() outside of a BEGIN block so that export tags can be imported?
+* Change new() and predict() so options can be globally set in the object and overridden in
+  each call to predict().
+
 12/17/2009
 * Finish writing up pod so module can be alpha-released on CPAN
-* Write in hooks to predict() so we can check for stuff like the lunar cycle
 * Right now we are trimming off any date-part that is smaller than the smallest bucket we
   have turned on. We need to make it so this is done in the comparisons, rather than
   actually modifying dates we are given.

@@ -6,19 +6,17 @@ use DateTime;
 use DateTime::Event::Predict;
 use DateTime::Event::Predict::Profile;
 
-my $profile = new DateTime::Event::Predict::Profile(
-	buckets => [qw/ day_of_week /],
-);
-
 my $dtp = DateTime::Event::Predict->new(
-	profile => $profile,
+	profile => {
+		buckets => [qw/ day_of_week /],
+	},
 );
 
 # Add todays date
 my $today = DateTime->today();
 $dtp->add_date($today);
 
-# Add the previous 5 days
+# Add the previous 14 days
 for  (1 .. 14) {
 	my $new_date = $today->clone->add(
 		days => ($_ * -1)

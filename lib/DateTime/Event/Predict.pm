@@ -15,11 +15,9 @@ package DateTime::Event::Predict;
 
 use strict;
 
-use 5.006;
-
-use Carp qw(carp croak confess);
 use DateTime;
 use Params::Validate qw(:all);
+use Carp qw(carp croak confess);
 use Scalar::Util;
 
 use POSIX qw(ceil);
@@ -37,8 +35,8 @@ sub new {
     my $proto = shift;
     
     my %opts = validate(@_, {
-    	dates       => { type => ARRAYREF,        optional => 1 },
-    	profile     => { type => SCALAR | OBJECT, optional => 1 },
+    	dates       => { type => ARRAYREF, optional => 1 },
+    	profile     => { type => SCALAR | OBJECT | HASHREF, optional => 1 },
     	#stdev_limit => { type => SCALAR,          default  => 2 },
     });
     
@@ -99,9 +97,9 @@ sub add_date {
 #Get or set the profile for this predictor
 sub profile {
 	my $self      = shift;
-	my ($profile) = @_; #$profile can be a string specifying a profile name that is provided by default, or a profile object
+	my ($profile) = @_; # $profile can be a string specifying a profile name that is provided by default, or a profile object, or options to create a new profile
 	
-	validate_pos(@_, { type => SCALAR | OBJECT, optional => 1 });
+	validate_pos(@_, { type => SCALAR | OBJECT | HASHREF, optional => 1 });
 	
 	#Get the profile
 	if (! defined $profile || ! $profile) { return $self->{profile}; }
@@ -110,9 +108,17 @@ sub profile {
 	
 	my $new_profile;
 	
+	# Profile is an actual DTP::Profile object
 	if (Scalar::Util::blessed($profile) && $profile->can('bucket')) {
 		$new_profile = $profile;
 	}
+	# Profile is a hashref of options to create a new DTP::Profile object with
+	elsif (ref($profile) eq 'HASH') {
+		$new_profile = DateTime::Event::Predict::Profile->new(
+			%$profile,
+		);
+	}
+	# Profile is the name of a profile alias
 	else {
 		$new_profile = DateTime::Event::Predict::Profile->new( profile => $profile );
 	}
@@ -135,36 +141,44 @@ sub profile {
 
 sub train {
 	my $self = shift;
-	#***Add optional dates array param to predict from here, plus other config params?
 	
 	### Training
 	
 	#Sort the dates chronologically (*** Really? Do we want the user to impose the order?)
-	my $cur_date;
-	#foreach my $date (sort { $b->hires_epoch() <=> $a->hires_epoch() } @{ $self->{dates} }) {
 	my @dates = sort { $a->hires_epoch() <=> $b->hires_epoch() } @{ $self->{dates} }; #*** Need to convert this to DateTime->compare($dt1, $dt2)
+	
+	# Last and first dates
 	$self->{last_date} = $dates[$#dates];
 	$self->{first_date} = $dates[0];
+	
+	my $cur_date;
 	foreach my $index (0 .. $#{ $self->{dates} }) {
+		# The date to work on
 		my $date = $dates[ $index ];
+		
+		# Get which dates were before and after the date we're working on
 		my ($before, $after);
 		if ($index > 0) { $before = $dates[ $index - 1 ]; }
 		if ($index < $#{ $self->{dates} }) { $after = $dates[ $index + 1 ]; }
 		
-		#Increment the distinct point buckets
+		# Increment the date-part buckets
 		while (my ($name, $dbucket) = each %{ $self->{distinct_buckets} }) {
+			# Get the accessor method by using can()
 			my $cref = $date->can( $dbucket->{accessor} );
 				croak "Can't call accessor '" . $dbucket->{accessor} . "' on " . ref($date) . " object" unless $cref;
+				
+			# Increment the number of instances for the value given when we use this bucket's accessor on $date
 			$dbucket->{buckets}->{ &$cref($date) }++;
 		}
 		
-		#If this is the first date we have nothing to diff, so we'll skip on to the next one
+		# If this is the first date we have nothing to diff, so we'll skip on to the next one
 		if (! $cur_date) { $cur_date = $date; next; }
 		
-		my $dur = $cur_date->subtract_datetime( $date ); #Get DateTime::Duration object representing the diff between the dates
+		# Get a DateTime::Duration object representing the diff between the dates
+		my $dur = $cur_date->subtract_datetime( $date );
 		
-		##Increment the interval buckets
-		#Intervals: here we default to the largest interval that we can see. So, for instance, if there is a difference of months we will not increment anything smaller than that.
+		##Increment the interval buckets ***WILL PROBABLY REMOVE
+		# Intervals: here we default to the largest interval that we can see. So, for instance, if there is a difference of months we will not increment anything smaller than that.
 		while (my ($name, $lbucket) = each %{ $self->{interval_buckets} }) {
 			my $cref = $dur->can( $lbucket->{accessor} );
 				croak "Can't call accessor '" . $lbucket->{accessor} . "' on " . ref($dur) . " object" unless $cref;
@@ -173,15 +187,19 @@ sub train {
 			$lbucket->{buckets}->{ $interval }++;
 		}
 		
-		#Add the epoch difference for poisson probabilities
+		# Add the difference between dates in epoch seconds
 		my $epoch_interval = $date->hires_epoch() - $cur_date->hires_epoch();
+		
+		### Epoch interval: $epoch_interval
+		
 		$self->{total_epoch_interval} += $epoch_interval;
 		
+		# Set the current date to this date
 		$cur_date = $date;
 	}
 	
-	#Average interval between dates in epoch seconds
-	$self->{mean_epoch_interval} = $self->{total_epoch_interval} / (scalar @dates);
+	# Average interval between dates in epoch seconds
+	$self->{mean_epoch_interval} = $self->{total_epoch_interval} / (scalar @dates - 1); #Divide total interval by number of intervals
 	
 	$self->{trained}++;
 }
@@ -191,7 +209,7 @@ sub predict {
 	
 	my %opts = validate(@_, {
 		max_predictions => { type => SCALAR,   optional => 1 }, # How many predictions to return
-		stdev_limit     => { type => SCALAR,   default  => 2 }, # Number of standard deviations to search through
+		stdev_limit     => { type => SCALAR,   default  => 2 }, # Number of standard deviations to search through, default to 2
 		callbacks       => { type => ARRAYREF, optional => 1 }, # Arrayref of coderefs to call when making predictions
 	});
 	
@@ -201,7 +219,7 @@ sub predict {
 	}
 	
 	# Train this set of dates if they're not already trained
-	unless ($self->_is_trained) { $self->train(); $self->{trained}++; }
+	$self->train if ! $self->_is_trained;
 	
 	### Beginning prediction
 	
@@ -223,6 +241,9 @@ sub predict {
 	### Most recent date: $most_recent_date->ymd
 	
 	### Make a starting search date that has been moved ahead by the average interval beteween dates (in epoch seconds)
+	
+	### Mean epoch second interval: $self->{mean_epoch_interval}
+	
 	my $duration = new DateTime::Duration(
 		seconds => $self->{mean_epoch_interval}, #Might need to round off hires second info here?
 	);
@@ -464,8 +485,9 @@ sub _trim_dates {
 	foreach my $date (@dates) {
 		confess "Can't trim a non-DateTime value" unless $date->isa( 'DateTime' );
 		
-		foreach my $bucket (grep { $_->trimmable && ($_->order < $smallest_bucket->order) } values %DateTime::Event::Predict::Profile::BUCKETS) {
-			$date->set( $bucket->accessor => 0 );
+		#foreach my $bucket (grep { $_->trimmable && ($_->order < $smallest_bucket->order) } values %DateTime::Event::Predict::Profile::BUCKETS) {
+		foreach my $bucket (grep { $_->order < $smallest_bucket->order } values %DateTime::Event::Predict::Profile::BUCKETS) {
+			$date->truncate( to => $smallest_bucket->accessor );
 		}
 	}
 }
@@ -487,14 +509,18 @@ Given a set of dates this module will predict the next date or dates to follow.
 
   use DateTime::Event::Predict;
 
-  my $dtp = DateTime::Event::Predict->new();
+  my $dtp = DateTime::Event::Predict->new(
+      profile => {
+          buckets => ['day_of_week'],
+      },
+  );
 
-  # Add todays date: 2009-12-17
+  # Add today's date: 2009-12-17
   my $date = new DateTime->today();
   $dtp->add_date($date);
 
-  # Add the previous 5 days
-  for  (1 .. 5) {
+  # Add the previous 14 days
+  for  (1 .. 14) {
       my $new_date = $date->clone->add(
           days => ($_ * -1),
       );
@@ -502,7 +528,7 @@ Given a set of dates this module will predict the next date or dates to follow.
       $dtp->add_date($new_date);
   }
 
-  #Predict the next date
+  # Predict the next date
   my $predicted_date = $dtp->predict;
 
   print $predicted_date->ymd;
@@ -510,11 +536,14 @@ Given a set of dates this module will predict the next date or dates to follow.
   # 2009-12-18
   
 Here we create a new C<DateTime> object with today's date (it being December 17th, 2009 currently). We
-then add that on the list of dates that C<DateTime::Event::Predict> will use to make the prediction.
+then add that on the list of dates that C<DateTime::Event::Predict> (DTP) will use to make the prediction.
 
-We also tack on the 5 previous days (December 16-11). Afterwards, we call L<predict>
+We also tack on the 14 previous days (December 16-11). Afterwards, we call L<predict> which returns a
+DateTime object representing the date DTP has calculated to come next.
   
 =head1 EXAMPLES
+
+=item Predicting Easter
 
 =head1 METHODS
 
