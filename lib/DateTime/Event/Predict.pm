@@ -540,7 +540,7 @@ Here we create a new C<DateTime> object with today's date (it being December 17t
 then use L<add_date|add_date> to add it onto the list of dates that C<DateTime::Event::Predict> (DTP)
 will use to make the prediction.
 
-Then we take the 14 previous days (December 16-11) and them on to same list one by one. This gives us a
+Then we take the 14 previous days (December 16-2) and them on to same list one by one. This gives us a
 good set to make a prediction out of.
 
 Finally we call L<predict|predict> which returns a C<DateTime> object representing the date that DTP has
