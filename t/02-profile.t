@@ -21,3 +21,4 @@ isa_ok( $profile, 'DateTime::Event::Predict::Profile' );
 @buckets = $profile->buckets();
 
 ok( @buckets, 'Buckets are defined' );
+

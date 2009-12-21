@@ -15,7 +15,10 @@ package DateTime::Event::Predict::Profile;
 
 use Params::Validate qw(:all);
 use Carp qw( croak confess );
-use Data::Dumper;
+
+use Exporter;
+@EXPORT_OK = qw(%DISTINCT_BUCKETS %INTERVAL_BUCKETS);
+%EXPORT_TAGS = (buckets => [qw(%DISTINCT_BUCKETS %INTERVAL_BUCKETS)]);
 
 our %PROFILES = (
 	default => {
@@ -37,13 +40,14 @@ our %PROFILES = (
 	},
 );
 
-our %BUCKETS = (
+our %DISTINCT_BUCKETS = (
 	nanosecond => DateTime::Event::Predict::Profile::Bucket->new(
-		name     => 'nanosecond',
-		accessor => 'nanosecond',
-		duration => 'nanoseconds',
+		name      => 'nanosecond',
+		type      => 'distinct',
+		accessor  => 'nanosecond',
+		duration  => 'nanoseconds',
 		trimmable => 1,
-		order    => 1,
+		order     => 1,
 	),
 	#microsecond => DateTime::Event::Predict::Profile::Bucket->new(
 	#	name     => 'microsecond',
@@ -58,108 +62,180 @@ our %BUCKETS = (
 	#	order    => 3,
 	#),
     second => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'second',
-    	accessor => 'second',
-    	duration => 'seconds',
+    	name	  => 'second',
+    	type      => 'distinct',
+    	accessor  => 'second',
+    	duration  => 'seconds',
     	trimmable => 1,
-    	order    => 4,
+    	order     => 4,
     ),
     #fractional_second => DateTime::Event::Predict::Profile::Bucket->new(
 	#	accessor => 'fractional_second',
 	#	order    => 5,
 	#),
     minute => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'minute',
-    	accessor => 'minute',
-    	duration => 'minutes',
+    	name	  => 'minute',
+    	type      => 'distinct',
+    	accessor  => 'minute',
+    	duration  => 'minutes',
     	trimmable => 1,
-    	order    => 6,
+    	order     => 6,
    	),
     hour => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'hour',
-    	accessor => 'hour',
-    	duration => 'hours',
+    	name	  => 'hour',
+    	type      => 'distinct',
+    	accessor  => 'hour',
+    	duration  => 'hours',
     	trimmable => 1,
-    	order    => 7,
+    	order     => 7,
     ),
     day_of_week => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'day_of_week',
-    	accessor => 'day_of_week',
-    	duration => 'days',
+    	name	  => 'day_of_week',
+    	type      => 'distinct',
+    	accessor  => 'day_of_week',
+    	duration  => 'days',
     	trimmable => 0,
-    	order    => 8,
+    	order     => 8,
     ),
     day_of_month => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'day_of_month',
-    	accessor => 'day',
-    	duration => 'days',
+    	name	  => 'day_of_month',
+    	type      => 'distinct',
+    	accessor  => 'day',
+    	duration  => 'days',
     	trimmable => 1,
-    	order    => 9,
+    	order     => 9,
     ),
     day_of_quarter => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'day_of_quarter',
-    	accessor => 'day_of_quarter',
-    	duration => 'days',
+    	name	  => 'day_of_quarter',
+    	type      => 'distinct',
+    	accessor  => 'day_of_quarter',
+    	duration  => 'days',
     	trimmable => 0,
-    	order    => 10,
+    	order     => 10,
     ),
     weekday_of_month => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'weekday',
-    	accessor => 'weekday', #Returns a number from 1..5 indicating which week day of the month this is. For example, June 9, 2003 is the second Monday of the month, and so this method returns 2 for that day.
-    	duration => 'days',
+    	name	  => 'weekday',
+    	type      => 'distinct',
+    	accessor  => 'weekday', #Returns a number from 1..5 indicating which week day of the month this is. For example, June 9, 2003 is the second Monday of the month, and so this method returns 2 for that day.
+    	duration  => 'days',
     	trimmable => 0,
-    	order    => 11,
+    	order     => 11,
     ),
     week_of_month => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'week_of_month',
-    	accessor => 'week_of_month',
-    	duration => 'weeks',
+    	name	  => 'week_of_month',
+    	type      => 'distinct',
+    	accessor  => 'week_of_month',
+    	duration  => 'weeks',
     	trimmable => 0,
-    	order    => 12,
+    	order     => 12,
     ),
     day_of_year => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'day_of_year',
-    	accessor => 'day_of_year',
-    	duration => 'days',
+    	name	  => 'day_of_year',
+    	type      => 'distinct',
+    	accessor  => 'day_of_year',
+    	duration  => 'days',
     	trimmable => 0,
-    	order    => 13,
+    	order     => 13,
     ),
     week_number => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'week_number',
-    	accessor => 'week_number',
-    	duration => 'weeks',
+    	name	  => 'week_number',
+    	type      => 'distinct',
+    	accessor  => 'week_number',
+    	duration  => 'weeks',
     	trimmable => 0,
-    	order    => 14,
+    	order     => 14,
     ),
     month_of_year => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'month_of_year',
-    	accessor => 'month',
-    	duration => 'months',
+    	name	  => 'month_of_year',
+    	type      => 'distinct',
+    	accessor  => 'month',
+    	duration  => 'months',
     	trimmable => 1,
-    	order    => 15,
+    	order     => 15,
     ),
     quarter_of_year => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'quarter_of_year',
-    	accessor => 'quarter',
-    	duration => 'quarters', #I don't think this duration exists
+    	name	  => 'quarter_of_year',
+    	type      => 'distinct',
+    	accessor  => 'quarter',
+    	duration  => 'quarters', #I don't think this duration exists
     	trimmable => 0,
-    	order    => 16,
+    	order     => 16,
     ),
     year => DateTime::Event::Predict::Profile::Bucket->new(
-    	name	 => 'year',
-    	accessor => 'year',
-    	duration => 'years', #I don't think this duration exists
+    	name	  => 'year',
+    	type      => 'distinct',
+    	accessor  => 'year',
+    	duration  => 'years', #I don't think this duration exists
     	trimmable => 0,
-    	order    => 17,
+    	order     => 17,
     ),
 );
 
 #Aliases
-$BUCKETS{'second_of_minute'} = $BUCKETS{'second'};
-$BUCKETS{'minute_of_hour'}   = $BUCKETS{'minute'};
-$BUCKETS{'hour_of_day'}   	 = $BUCKETS{'hour'};
-$BUCKETS{'week_of_year'}   	 = $BUCKETS{'week_number'};
+$DISTINCT_BUCKETS{'second_of_minute'} = $DISTINCT_BUCKETS{'second'};
+$DISTINCT_BUCKETS{'minute_of_hour'}   = $DISTINCT_BUCKETS{'minute'};
+$DISTINCT_BUCKETS{'hour_of_day'}   	  = $DISTINCT_BUCKETS{'hour'};
+$DISTINCT_BUCKETS{'week_of_year'}     = $DISTINCT_BUCKETS{'week_number'};
 
+#***We'll need an order of precedence here, so that when we find a difference in months we don't increment any of the differences smaller
+#   than that (weeks, days). *OR do we want to increment the difference but leave the weight so small that it has a smaller effect? I can't see why that
+#   would be useful
+
+# Interval buckets
+our %INTERVAL_BUCKETS = (
+	nanoseconds => DateTime::Event::Predict::Profile::Bucket->new(
+		name       => 'nanoseconds',
+		type	   => 'interval',
+		accessor   => 'nanoseconds', # Accessor in the DateTime::Duration object that we use to get the difference
+		order      => 0,             # Order of precedence of this bucket (larger means it takes precedence)
+    ),
+    seconds => DateTime::Event::Predict::Profile::Bucket->new(
+		name       => 'seconds',
+		type	   => 'interval',
+		accessor   => 'seconds',
+		order      => 1,
+    ),
+	minutes => DateTime::Event::Predict::Profile::Bucket->new(
+		name       => 'minutes',
+		type	   => 'interval',
+		accessor   => 'minutes',
+		order      => 2,
+    ),
+    hours => DateTime::Event::Predict::Profile::Bucket->new(
+    	name       => 'hours',
+    	type	   => 'interval',
+		accessor   => 'hours',
+		order      => 3,
+    ),
+    days => DateTime::Event::Predict::Profile::Bucket->new(
+    	name       => 'days',
+    	type	   => 'interval',
+		accessor   => 'days',
+		order      => 4,
+    ),
+    weeks => DateTime::Event::Predict::Profile::Bucket->new(
+    	name       => 'weeks',
+    	type	   => 'interval',
+		accessor   => 'weeks',
+		order      => 5,
+    ),
+    months => DateTime::Event::Predict::Profile::Bucket->new(
+    	name       => 'months',
+    	type	   => 'interval',
+		accessor   => 'months',
+		order      => 6,
+    ),
+    years => DateTime::Event::Predict::Profile::Bucket->new(
+    	name       => 'years',
+    	type	   => 'interval',
+		accessor   => 'years',
+		order      => 7,
+    ),
+);
+
+# Make a list of all the accessors so we can check for them 
+our @distinct_bucket_accessors = map { $_->{accessor} } values %DISTINCT_BUCKETS;
+our @interval_bucket_accessors = map { $_->{accessor} } values %INTERVAL_BUCKETS;
 
 #===============================================================================#
 
@@ -191,7 +267,7 @@ sub new {
     }
     
     foreach my $bucket_name (@{ $opts{'buckets'} }) {
-		my $bucket = $BUCKETS{ $bucket_name }->clone;
+		my $bucket = $DISTINCT_BUCKETS{ $bucket_name }->clone;
 		
 		$self->{buckets}->{ $bucket_name } = $bucket;
 	}
@@ -242,11 +318,12 @@ sub new {
     
     %opts = validate(@_, {
     	name      => { type => SCALAR },
+    	type      => { type => SCALAR },
     	order     => { type => SCALAR }, 
-    	accessor  => { type => SCALAR }, 
-    	duration  => { type => SCALAR },
-    	trimmable => { type => SCALAR },
-    	on        => { type => SCALAR, default => 1 },
+    	accessor  => { type => SCALAR },
+    	duration  => { type => SCALAR, optional => 1 }, # Interval buckets don't have durations
+    	trimmable => { type => SCALAR, optional => 1 },
+    	on        => { type => SCALAR, default  => 1 },
     });
     
     my $class = ref( $proto ) || $proto;
@@ -269,6 +346,12 @@ sub name {
 	my $self = shift;
 	
 	return $self->{name};
+}
+
+sub name {
+	my $self = shift;
+	
+	return $self->{type};
 }
 
 sub accessor {

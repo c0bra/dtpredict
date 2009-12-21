@@ -24,7 +24,7 @@ use POSIX qw(ceil);
 use Data::Dumper;
 use Smart::Comments;
 
-use DateTime::Event::Predict::Profile;
+use DateTime::Event::Predict::Profile qw(:buckets);
 
 our $VERSION = '0.01';                                                                                     
 
@@ -486,7 +486,7 @@ sub _trim_dates {
 		confess "Can't trim a non-DateTime value" unless $date->isa( 'DateTime' );
 		
 		#foreach my $bucket (grep { $_->trimmable && ($_->order < $smallest_bucket->order) } values %DateTime::Event::Predict::Profile::BUCKETS) {
-		foreach my $bucket (grep { $_->order < $smallest_bucket->order } values %DateTime::Event::Predict::Profile::BUCKETS) {
+		foreach my $bucket (grep { $_->order < $smallest_bucket->order } values %DISTINCT_BUCKETS) {
 			# Clone the date so we don't modify anything we shouldn't
 			$date->clone->truncate( to => $smallest_bucket->accessor );
 		}
@@ -674,7 +674,7 @@ we can't be predicting a new date that's exactly 1 day after the most recent one
  
 =head1 AUTHOR
 
-Brian Hann, C<< <brian.hann+dtp at gmail.com> >>
+Brian Hann, C<< <brian.hann at gmail.com> >>
 
 =head1 BUGS
 
