@@ -13,28 +13,32 @@
 
 package DateTime::Event::Predict::Profile;
 
-use Params::Validate qw(:all);
 use Carp qw( croak confess );
+use Params::Validate qw(:all);
+use List::MoreUtils qw(uniq);
 
 use Exporter;
-@EXPORT_OK = qw(%DISTINCT_BUCKETS %INTERVAL_BUCKETS);
-%EXPORT_TAGS = (buckets => [qw(%DISTINCT_BUCKETS %INTERVAL_BUCKETS)]);
+our @ISA = qw(Exporter);
+our @EXPORT_OK = qw(%DISTINCT_BUCKETS %INTERVAL_BUCKETS);
+our %EXPORT_TAGS = (buckets => [qw(%DISTINCT_BUCKETS %INTERVAL_BUCKETS)]);
+
 
 our %PROFILES = (
 	default => {
-		buckets => [
+		distinct_buckets => [
 			'day_of_week',
 			'day_of_month',
 			'day_of_year',
 		],
 	},
 	holiday => {
-		buckets => [
-			'day_of_year'
+		distinct_buckets => [
+			'day_of_year',
+			'day_of_week',
 		],
 	},
 	daily => {
-		buckets => [
+		distinct_buckets => [
 			'day_of_year'
 		],
 	},
@@ -175,6 +179,7 @@ our %DISTINCT_BUCKETS = (
 $DISTINCT_BUCKETS{'second_of_minute'} = $DISTINCT_BUCKETS{'second'};
 $DISTINCT_BUCKETS{'minute_of_hour'}   = $DISTINCT_BUCKETS{'minute'};
 $DISTINCT_BUCKETS{'hour_of_day'}   	  = $DISTINCT_BUCKETS{'hour'};
+$DISTINCT_BUCKETS{'day'}     		  = $DISTINCT_BUCKETS{'day_of_month'};
 $DISTINCT_BUCKETS{'week_of_year'}     = $DISTINCT_BUCKETS{'week_number'};
 
 #***We'll need an order of precedence here, so that when we find a difference in months we don't increment any of the differences smaller
@@ -237,6 +242,9 @@ our %INTERVAL_BUCKETS = (
 our @distinct_bucket_accessors = map { $_->{accessor} } values %DISTINCT_BUCKETS;
 our @interval_bucket_accessors = map { $_->{accessor} } values %INTERVAL_BUCKETS;
 
+# Condense the accessors down to the unique values
+our @all_accessors = uniq (@distinct_bucket_accessors, @interval_bucket_accessors);
+
 #===============================================================================#
 
 sub new {
@@ -244,8 +252,9 @@ sub new {
     my %opts  = @_;
     
     validate(@_, {
-    	profile => { type => SCALAR, optional   => 1 }, #Preset profile
-    	buckets => { type => ARRAYREF, optional => 1 }, #Custom bucket definitions
+    	profile          => { type => SCALAR,   optional => 1 }, # Preset profile
+    	distinct_buckets => { type => ARRAYREF, optional => 1 }, # Custom distinct bucket definitions
+    	interval_buckets => { type => ARRAYREF, optional => 1 }, # Custom interval bucket definitions
     });
     
     my $class = ref( $proto ) || $proto;
@@ -253,23 +262,39 @@ sub new {
     my $self = {};
     
     $self->{buckets} = {};
+    $self->{interval_buckets} = {};
+    $self->{distinct_buckets} = {};
     
+    # Make sure we either have a preset profile name, or one of the bucket options set
     if ( $opts{'profile'} ) {
     	if ( exists $PROFILES{ $opts{'profile'} } ) {
-    		$opts{'buckets'} = $PROFILES{ $opts{'profile'} }->{buckets};
+    		$opts{'distinct_buckets'} = $PROFILES{ $opts{'profile'} }->{distinct_buckets};
+    		$opts{'interval_buckets'} = $PROFILES{ $opts{'profile'} }->{interval_buckets};
     	}
     	else {
     		confess("Undefined profile: '" . $opts{profile} . "' provided");
     	}
     }
-    elsif ( ! $opts{'buckets'} ) {
+    elsif ( ! $opts{'distinct_buckets'} && ! $opts{'interval_buckets'}) {
     	confess("Must specify either a profile or a custom set of buckets");
     }
     
-    foreach my $bucket_name (@{ $opts{'buckets'} }) {
+    # Insert a bucket object into the bucket lists for the specified distinct buckets
+    foreach my $bucket_name (@{ $opts{'distinct_buckets'} }) {
 		my $bucket = $DISTINCT_BUCKETS{ $bucket_name }->clone;
 		
+		# Put this bucket in the full bucket list and the distinct bucket list
 		$self->{buckets}->{ $bucket_name } = $bucket;
+		$self->{distinct_buckets}->{ $bucket_name } = $bucket;
+	}
+	
+	# Insert a bucket object into the bucket lists for the specified interval buckets
+	foreach my $bucket_name (@{ $opts{'interval_buckets'} }) {
+		my $bucket = $INTERVAL_BUCKETS{ $bucket_name }->clone;
+		
+		# Put this bucket in the full bucket list and the interval bucket list
+		$self->{buckets}->{ $bucket_name } = $bucket;
+		$self->{interval_buckets}->{ $bucket_name } = $bucket;
 	}
     
     bless($self, $class);
@@ -277,6 +302,7 @@ sub new {
     return $self;
 }
 
+# Return a bucket by its name
 sub bucket {
 	my $self   = shift;
 	my $bucket = shift;
@@ -290,6 +316,8 @@ sub bucket {
 	return $self->{buckets}->{ $bucket };
 }
 
+# Return either the full bucket list or a slice of the buckets according to a list of names
+# sent in
 sub buckets {
 	my $self    = shift;
 	my @buckets = @_;
@@ -300,6 +328,40 @@ sub buckets {
 	}
 	else {
 		@to_return = values %{$self->{buckets}};
+	}
+	
+	return wantarray ? @to_return : \@to_return;
+}
+
+# Return either the full list of the distinct buckets or a slice of the buckets according to a list of names
+# sent in
+sub distinct_buckets {
+	my $self    = shift;
+	my @buckets = @_;
+	
+	my @to_return = ();
+	if (@buckets) {
+		@to_return = @{ $self->{distinct_buckets} }{ @buckets };
+	}
+	else {
+		@to_return = values %{$self->{distinct_buckets}};
+	}
+	
+	return wantarray ? @to_return : \@to_return;
+}
+
+# Return either the full list of the interval buckets or a slice of the buckets according to a list of names
+# sent in
+sub interval_buckets {
+	my $self    = shift;
+	my @buckets = @_;
+	
+	my @to_return = ();
+	if (@buckets) {
+		@to_return = @{ $self->{interval_buckets} }{ @buckets };
+	}
+	else {
+		@to_return = values %{$self->{interval_buckets}};
 	}
 	
 	return wantarray ? @to_return : \@to_return;
@@ -348,7 +410,7 @@ sub name {
 	return $self->{name};
 }
 
-sub name {
+sub type {
 	my $self = shift;
 	
 	return $self->{type};

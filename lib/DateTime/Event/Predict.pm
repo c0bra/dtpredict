@@ -22,7 +22,7 @@ use Scalar::Util;
 
 use POSIX qw(ceil);
 use Data::Dumper;
-use Smart::Comments;
+#use Smart::Comments;
 
 use DateTime::Event::Predict::Profile qw(:buckets);
 
@@ -101,15 +101,13 @@ sub profile {
 	
 	validate_pos(@_, { type => SCALAR | OBJECT | HASHREF, optional => 1 });
 	
-	#Get the profile
+	# If no profile is provided, return the current profile
 	if (! defined $profile || ! $profile) { return $self->{profile}; }
-	
-	#Validate & set the profile
 	
 	my $new_profile;
 	
 	# Profile is an actual DTP::Profile object
-	if (Scalar::Util::blessed($profile) && $profile->can('bucket')) {
+	if (Scalar::Util::blessed($profile) && $profile->can('buckets')) {
 		$new_profile = $profile;
 	}
 	# Profile is a hashref of options to create a new DTP::Profile object with
@@ -123,11 +121,21 @@ sub profile {
 		$new_profile = DateTime::Event::Predict::Profile->new( profile => $profile );
 	}
 	
-	#Add the buckets
-    foreach my $bucket ( $new_profile->buckets() ) {
+	# Add the distinct buckets
+    foreach my $bucket ( $new_profile->distinct_buckets() ) {
     	$self->{distinct_buckets}->{ $bucket->name } = {
     		accessor => $bucket->accessor,
     		duration => $bucket->duration,
+    		order    => $bucket->order,
+    		weight   => $bucket->weight,
+    		buckets  => {},
+    	};
+    }
+    
+    # Add the interval buckets
+    foreach my $bucket ( $new_profile->interval_buckets() ) {
+    	$self->{interval_buckets}->{ $bucket->name } = {
+    		accessor => $bucket->accessor,
     		order    => $bucket->order,
     		weight   => $bucket->weight,
     		buckets  => {},
@@ -150,6 +158,11 @@ sub train {
 	# Last and first dates
 	$self->{last_date} = $dates[$#dates];
 	$self->{first_date} = $dates[0];
+	
+	# Clear out anything already in the the buckets
+	foreach my $bucket (values %{$self->{distinct_buckets}}, values %{$self->{interval_buckets}} ) {
+		$bucket->{buckets} = {};
+	}
 	
 	my $cur_date;
 	foreach my $index (0 .. $#{ $self->{dates} }) {
@@ -177,14 +190,14 @@ sub train {
 		# Get a DateTime::Duration object representing the diff between the dates
 		my $dur = $cur_date->subtract_datetime( $date );
 		
-		##Increment the interval buckets ***WILL PROBABLY REMOVE
-		# Intervals: here we default to the largest interval that we can see. So, for instance, if there is a difference of months we will not increment anything smaller than that.
-		while (my ($name, $lbucket) = each %{ $self->{interval_buckets} }) {
-			my $cref = $dur->can( $lbucket->{accessor} );
-				croak "Can't call accessor '" . $lbucket->{accessor} . "' on " . ref($dur) . " object" unless $cref;
+		# Increment the interval buckets
+		# Intervals: here we default to the largest interval that we can see. So, for instance, if
+		#   there is a difference of months we will not increment anything smaller than that.
+		while (my ($name, $bucket) = each %{ $self->{interval_buckets} }) {
+			my $cref = $dur->can( $bucket->{accessor} );
+				croak "Can't call accessor '" . $bucket->{accessor} . "' on " . ref($dur) . " object" unless $cref;
 			my $interval = &$cref($dur);
-			#if ($interval) { $lbucket->{buckets}->{ $interval }++; }
-			$lbucket->{buckets}->{ $interval }++;
+			$bucket->{buckets}->{ $interval }++;
 		}
 		
 		# Add the difference between dates in epoch seconds
@@ -201,6 +214,7 @@ sub train {
 	# Average interval between dates in epoch seconds
 	$self->{mean_epoch_interval} = $self->{total_epoch_interval} / (scalar @dates - 1); #Divide total interval by number of intervals
 	
+	# Mark this object as being trained
 	$self->{trained}++;
 }
 
@@ -273,7 +287,7 @@ sub predict {
 	);
 	
 	#Sort the predictions by their total deviation
-	my @predictions = sort { $a->{_date_deviation} <=> $b->{_date_deviation} } values %predictions;
+	my @predictions = sort { $a->{_dtp_deviation} <=> $b->{_dtp_deviation} } values %predictions;
 	
 	return wantarray ? @predictions : $predictions[0];
 }
@@ -390,7 +404,7 @@ sub _date_descend {
 				#All the dateparts were within their standard deviations, check for callbacks and push this date into the set of predictions
 				if ($good == 1) {
 					### Found good date: $new_date->ymd
-					$new_date->{_date_deviation} = $date_deviation;
+					$new_date->{_dtp_deviation} = $date_deviation;
 					
 					# Run each hook we were passed
 					foreach my $callback (@$callbacks) {

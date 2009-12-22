@@ -50,7 +50,7 @@ my @easter_dates = qw(
 
 my $dtp = new DateTime::Event::Predict(
 	profile => {
-		buckets => [qw/ day_of_year day_of_week /],
+		distinct_buckets => [qw/ day_of_year day_of_week /],
 	},
 );
 

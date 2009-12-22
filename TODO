@@ -1,7 +1,12 @@
 TODO list for Perl module DateTime::Even::Predict
 
+12/22/2009
+* Can we combine the interval and distinct buckets into one full bucket list? The names should mean there's no
+  collisions (just confusion, maybe too much) and the 'type' identifier says how to use it. Probably not a
+  good idea.
+* train() needs to reset the bucket values each time it's called; right now they'll just increment endlessly
+
 12/18/2009
-* Change trim code so that it uses the truncate() method from DateTime.
 * We definitely need to add the interval_buckets back in. Right now there's no way
   to predict something like the Chiefs next Superbowl victory. With the years 1966
   and 1969 you get a mean of 1967.5 and a standard deviation of 1.5. We have to

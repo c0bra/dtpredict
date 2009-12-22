@@ -2,7 +2,8 @@
 
 use strict;
 
-use Test::More tests => 0;
+use Test::More tests => 1;
 
 use DateTime::Event::Predict;
 
+ok(1);
