@@ -1,6 +1,6 @@
 #!perl
 
-use Test::More tests => 6;
+use Test::More tests => 2;
 
 use DateTime;
 use DateTime::Event::Predict;
@@ -76,46 +76,3 @@ my $easter = $dtp->predict(
 
 ok(defined $easter, 'Easter prediction defined?');
 ok($easter->ymd eq '2010-04-11', 'Predicted ' . $easter->ymd . ' for easter with no callbacks, should be 2010-04-11');
-
-#
-# Test prediction for Easter with lunar cycle hooks, if module available
-#
-
-SKIP: {
-	eval {
-		require DateTime::Event::Lunar;
-	};
-	
-	skip "DateTime::Event::Lunar not installed", 4 if $@;
-	
-	DateTime::Event::Lunar->import(':phases');
-	
-	skip "Couldn't import from DateTime::Event::Lunar", 4 if (FULL_MOON != 180);
-	
-	# Get the Vernal Equinox
-	my $vernal = DateTime->new( year => 2010, month => 3, day => 21 ); # March 21st
-	
-	is($vernal->ymd, '2010-03-21', 'Got vernal equinox');
-	
-	# Get the next full moon
-	my $full_moon = DateTime::Event::Lunar->lunar_phase_after(
-		datetime => $vernal,
-		phase    => FULL_MOON,
-		on_or_after => 1
-	);
-	
-	is($full_moon->ymd, '2010-03-30', 'Next full moon after vernal equinox is March 30th, 2010');
-	
-	my $real_easter = $dtp->predict(
-		callbacks => [
-			# Return false if prediction is more than 7 days after the given full moon
-			sub {
-				my $p = shift;
-				return ($p->delta_days($full_moon)->delta_days() > 7) ? 0 : 1;
-			}
-		]
-	);
-	
-	ok(defined $real_easter, 'Got a prediction back for real easter');
-	is($real_easter->ymd, '2010-04-04', 'Prediction easter with DateTime::Event::Lunar as: ' . $real_easter->ymd);
-}

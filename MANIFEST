@@ -7,7 +7,6 @@ Makefile.PL
 README
 TODO
 inc
-inc/.author
 inc/Module
 inc/Module/AutoInstall.pm
 inc/Module/Install

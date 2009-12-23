@@ -508,7 +508,7 @@ sub _trim_dates {
 	
 	# Get the smallest bucket we have turned on
 	my @buckets = (sort { $a->order <=> $b->order } grep { $_->on && $_->trimmable } $self->profile->buckets)[0];
-	my $smallest_bucket = @buckets[0];
+	my $smallest_bucket = $buckets[0];
 	
 	return if ! defined $smallest_bucket || ! $smallest_bucket || ! @buckets;
 	
@@ -677,6 +677,8 @@ Possible options
           sub { return ($_->second % 4) ? 0 : 1 } # Only predict dates with second values that are divisible by four.
       ],
   );
+  
+=over 4
 
 =item max_predictions
 
@@ -685,6 +687,12 @@ Maximum number of predictions to find.
 =item callbacks
 
 Arrayref of subroutine callbacks. If any of them return a false value the date will not be returned as a prediction.
+
+=back
+
+=head2 train
+
+Train this instance of DTP
 
 =head1 TODO
 
@@ -753,7 +761,5 @@ under the same terms as Perl itself.
 =head1 SEE ALSO
 
 L<DateTime>, L<DateTime::Event::Predict::Profile>
-
-=back
 
 =cut
