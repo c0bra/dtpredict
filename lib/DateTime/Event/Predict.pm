@@ -13,6 +13,8 @@
 
 package DateTime::Event::Predict;
 
+use 5.006;
+
 use strict;
 
 use DateTime;
@@ -62,17 +64,20 @@ sub new {
     return $self;
 }
 
-#Get or set list of dates ***NOTE: Should make this validate for 'can' on the DateTime methods we need and on 'isa' for DateTime
+# Get or set list of dates
+# ***NOTE: Should make this validate for 'can' on the DateTime methods we need and on 'isa' for DateTime
 sub dates {
 	my $self   = shift;
 	my ($dates) = @_;
 	
 	validate_pos(@_, { type => ARRAYREF, optional => 1 });
 	
-	if (! defined $dates) { return $self->{dates}; }
+	if (! defined $dates) {
+		return wantarray ? @{$self->{dates}} : $self->{dates};
+	}
 	elsif (defined $dates) {
 		foreach my $date (@$dates) {
-			$self->_trim_dates( $date );
+			$self->_trim_date( $date );
 			$self->add_date($date);
 		}
 	}
@@ -80,14 +85,14 @@ sub dates {
 	return 1;
 }
 
-#Add a date to the list of dates
+# Add a date to the list of dates
 sub add_date {
 	my $self   = shift;
 	my ($date) = @_;
 	
 	validate_pos(@_, { isa => 'DateTime' }); #***Or we could attempt to parse the date, or use can( epoch() );
 	
-	$self->_trim_dates( $date );
+	$self->_trim_date( $date );
 	
 	push(@{ $self->{dates} }, $date);
 	
@@ -222,9 +227,10 @@ sub predict {
 	my $self = shift;
 	
 	my %opts = validate(@_, {
-		max_predictions => { type => SCALAR,   optional => 1 }, # How many predictions to return
-		stdev_limit     => { type => SCALAR,   default  => 2 }, # Number of standard deviations to search through, default to 2
-		callbacks       => { type => ARRAYREF, optional => 1 }, # Arrayref of coderefs to call when making predictions
+		max_predictions => { type => SCALAR,     optional => 1 }, # How many predictions to return
+		stdev_limit     => { type => SCALAR,     default  => 2 }, # Number of standard deviations to search through, default to 2
+		min_date		=> { isa  => 'DateTime', optional => 1 }, # If set, make no prediction before 'min_date'
+		callbacks       => { type => ARRAYREF,   optional => 1 }, # Arrayref of coderefs to call when making predictions
 	});
 	
 	# Force max predictions to one if we were called in scalar context
@@ -306,8 +312,9 @@ sub _date_descend {
 		bucket_keys 	 => { type => ARRAYREF },				 # A list of bucket names that we shift out of to get the next bucket to use
 		stdev_limit 	 => { type => SCALAR },					 # The limit of how many standard deviations to search through
 		predictions 	 => { type => HASHREF },				 # A hashref of predictions we find
-		max_predictions  => { type => SCALAR,   optional => 1 }, # The maxmimum number of predictions to return (prevents overly long searches)
-		callbacks 	     => { type => ARRAYREF, optional => 1 }, # A list of custom coderefs that are called on each possible prediction
+		max_predictions  => { type => SCALAR,     optional => 1 }, # The maxmimum number of predictions to return (prevents overly long searches)
+		min_date		 => { isa  => 'DateTime', optional => 1 }, # If set, make no prediction before 'min_date'
+		callbacks 	     => { type => ARRAYREF,   optional => 1 }, # A list of custom coderefs that are called on each possible prediction
 	});	
 	
 	# Copy the options over into simple scalars so it's easier on my eyes
@@ -361,10 +368,17 @@ sub _date_descend {
 			
 			# Get the new date
 			my $new_date = $date + $duration_increment;
+			
+			# Trim the date down to just the date parts we care about
 			$self->_trim_date( $new_date );
 			
-			# Skip this date if it's before the most recent date
+			# Skip this date if it's before or on the most recent date
 			if (DateTime->compare( $new_date, $opts{'most_recent_date'} ) <= 0) { # New date is before the most recent one, or is same as most recent one
+				next;
+			}
+			
+			# Skip this date if the "min_date" option is set, and it's before or on that date
+			if ($opts{'min_date'} && DateTime->compare($new_date, $opts{'min_date'}) <= 0) {
 				next;
 			}
 			
@@ -467,12 +481,14 @@ sub _bucket_statistics {
 	return ($mean, $variance, $stdev);
 }
 
+# Whether this instance has been trained by train() or not
 sub _is_trained {
 	my $self = shift;
 	
 	return ($self->{trained} > 0) ? 1 : 0;
 }  
 
+# Utility method to print out the dates added to this instance
 sub _print_dates {
 	my $self = shift;
 	
@@ -506,6 +522,8 @@ sub _trim_dates {
 		}
 	}
 }
+
+# Useless syntactic sugar
 sub _trim_date { return &_trim_dates(@_); }
     
 1; # End of DateTime::Event::Predict
@@ -731,5 +749,11 @@ Copyright 2009 Brian Hann, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
+
+=head1 SEE ALSO
+
+L<DateTime>, L<DateTime::Event::Predict::Profile>
+
+=back
 
 =cut
