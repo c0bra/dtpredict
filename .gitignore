@@ -2,3 +2,6 @@ Makefile*
 blib
 pm_to_blib
 research
+t/boilerplate.t
+t/pod.t
+t/pod-coverage.t
