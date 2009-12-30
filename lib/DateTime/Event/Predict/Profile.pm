@@ -252,7 +252,7 @@ sub new {
     my %opts  = @_;
     
     validate(@_, {
-    	profile          => { type => SCALAR,   optional => 1 }, # Preset profile
+    	profile          => { type => SCALAR,   optional => 1 }, # Preset profile alias
     	distinct_buckets => { type => ARRAYREF, optional => 1 }, # Custom distinct bucket definitions
     	interval_buckets => { type => ARRAYREF, optional => 1 }, # Custom interval bucket definitions
     });
@@ -265,7 +265,7 @@ sub new {
     $self->{interval_buckets} = {};
     $self->{distinct_buckets} = {};
     
-    # Make sure we either have a preset profile name, or one of the bucket options set
+    # Make sure we either have a preset profile alias, or one of the bucket options set
     if ( $opts{'profile'} ) {
     	if ( exists $PROFILES{ $opts{'profile'} } ) {
     		$opts{'distinct_buckets'} = $PROFILES{ $opts{'profile'} }->{distinct_buckets};

@@ -167,7 +167,7 @@ sub train {
 		$bucket->{buckets} = {};
 	}
 	
-	my $cur_date;
+	my $prev_date;
 	foreach my $index (0 .. $#{ $self->{dates} }) {
 		# The date to work on
 		my $date = $dates[ $index ];
@@ -188,10 +188,10 @@ sub train {
 		}
 		
 		# If this is the first date we have nothing to diff, so we'll skip on to the next one
-		if (! $cur_date) { $cur_date = $date; next; }
+		if (! $prev_date) { $prev_date = $date; next; }
 		
 		# Get a DateTime::Duration object representing the diff between the dates
-		my $dur = $cur_date->subtract_datetime( $date );
+		my $dur = $prev_date->subtract_datetime( $date );
 		
 		# Increment the interval buckets
 		# Intervals: here we default to the largest interval that we can see. So, for instance, if
@@ -204,14 +204,14 @@ sub train {
 		}
 		
 		# Add the difference between dates in epoch seconds
-		my $epoch_interval = $date->hires_epoch() - $cur_date->hires_epoch();
+		my $epoch_interval = $date->hires_epoch() - $prev_date->hires_epoch();
 		
 		### Epoch interval: $epoch_interval
 		
 		$self->{total_epoch_interval} += $epoch_interval;
 		
 		# Set the current date to this date
-		$cur_date = $date;
+		$prev_date = $date;
 	}
 	
 	# Average interval between dates in epoch seconds
@@ -455,7 +455,7 @@ sub _bucket_statistics {
 	my $total = 0;
 	my $count = 0;
 	while (my ($value, $occurances) = each %{ $bucket->{buckets} }) {
-		# Gotta loop for each time the value has been found
+		# Gotta loop for each time the value has been found, incrementing the total by the value
 		for (1 .. $occurances) {
 			$total += $value;
 			$count++;
@@ -523,7 +523,7 @@ sub _trim_dates {
 
 # Useless syntactic sugar
 sub _trim_date { return &_trim_dates(@_); }
-    
+
 1; # End of DateTime::Event::Predict
     
 __END__
@@ -636,7 +636,7 @@ Arguments: $profile
 
 Set the profile for which date-parts will be 
 
-  # Pass in preset profile by name
+  # Pass in preset profile by its alias
   $dtp->profile( profile => 'default' );
   $dtp->profile( profile => 'holiday' );
 
