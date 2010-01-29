@@ -126,7 +126,7 @@ sub profile {
 	}
 	
 	# Add the distinct buckets
-    foreach my $bucket ( $new_profile->distinct_buckets() ) {
+    foreach my $bucket ( $new_profile->_distinct_buckets() ) {
     	$self->{distinct_buckets}->{ $bucket->name } = {
     		accessor => $bucket->accessor,
     		duration => $bucket->duration,
@@ -137,7 +137,7 @@ sub profile {
     }
     
     # Add the interval buckets
-    foreach my $bucket ( $new_profile->interval_buckets() ) {
+    foreach my $bucket ( $new_profile->_interval_buckets() ) {
     	$self->{interval_buckets}->{ $bucket->name } = {
     		accessor => $bucket->accessor,
     		order    => $bucket->order,
@@ -800,7 +800,7 @@ provided dates into "buckets" for processing later on.
 
 =head1 EXAMPLES
 
-=over
+=over 4
 
 =item Predicting Easter
 
@@ -898,7 +898,7 @@ Train this instance of DTP
 
 =head1 TODO
 
-=over
+=over 4
 
 =item *
 

@@ -12,10 +12,6 @@ TODO list for Perl module DateTime::Even::Predict
   -- This should be done but I'm not 100% sure.
 
 12/18/2009
-* We definitely need to add the interval_buckets back in. Right now there's no way
-  to predict something like the Chiefs next Superbowl victory. With the years 1966
-  and 1969 you get a mean of 1967.5 and a standard deviation of 1.5. We have to
-  use intervals to find the next date.
 * Is there a way to use import() outside of a BEGIN block so that export tags can be imported?
 * Change new() and predict() so options can be globally set in the object and overridden in
   each call to predict().
@@ -29,7 +25,7 @@ TODO list for Perl module DateTime::Even::Predict
   actually modifying dates we are given. OR MAYBE NOT, because of truncate()?
 
 12/16/2009
-* Due to possible DOS attack that can be done through very large duration operations (thousands
+* Due to possible DoS attack that can be done through very large duration operations (thousands
   of years in the future, etc), we'll need to add some sort of protection, I think.
 
 ??/??/????
