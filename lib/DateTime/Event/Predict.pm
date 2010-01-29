@@ -21,6 +21,7 @@ use DateTime;
 use Params::Validate qw(:all);
 use Carp qw(carp croak confess);
 use Scalar::Util;
+use Data::Dumper;
 
 use POSIX qw(ceil);
 
@@ -239,13 +240,12 @@ sub predict {
 	# Train this set of dates if they're not already trained
 	$self->train if ! $self->_is_trained;
 	
-	### Beginning prediction
-	
-	# Make a copy of the buckets so we can mess with them
-	my %buckets = %{ $self->{distinct_buckets} };
+	# Make a copy of the distinct and interval bucket hashes so we can mess with them
+	my %distinct_buckets = %{ $self->{distinct_buckets} };
+	my %interval_buckets = %{ $self->{interval_buckets} };
 	
 	# Figure the mean, variance, and standard deviation for each bucket
-	foreach my $bucket (values %buckets) {
+	foreach my $bucket (values %distinct_buckets, values %interval_buckets) {
 		my ($mean, $variance, $stdev) = $self->_bucket_statistics($bucket);
 		
 		$bucket->{mean}     = $mean;
@@ -256,41 +256,34 @@ sub predict {
 	# Get the most recent of the provided dates by sorting them by their epoch seconds
 	my $most_recent_date = (sort { $b->hires_epoch() <=> $a->hires_epoch() } @{ $self->{dates} })[0];
 	
-	### Most recent date: $most_recent_date->ymd
-	
-	### Make a starting search date that has been moved ahead by the average interval beteween dates (in epoch seconds)
-	
-	### Mean epoch second interval: $self->{mean_epoch_interval}
-	
+	# Make a starting search date that has been moved ahead by the average interval beteween dates (in epoch seconds)
 	my $duration = new DateTime::Duration(
-		seconds => $self->{mean_epoch_interval}, #Might need to round off hires second info here?
+		seconds => $self->{mean_epoch_interval}, # **Might need to round off hires second info here?
 	);
 	my $start_date = $most_recent_date + $duration;
-	
-	### Starting search at: $start_date->ymd
 	
 	# A hash of predictions, dates are keyed by their hires_epoch() value
 	my %predictions = ();
 	
-	### Get a list of buckets after sorting the buckets from largest interval to smallest (i.e. year->month->day->hour ... microsecond, etc)
-	my @bucket_keys = sort { $self->{distinct_buckets}->{ $b }->{order} <=> $self->{distinct_buckets}->{ $a }->{order} } keys %buckets;
+	# Get a list of buckets after sorting the buckets from largest interval to smallest (i.e. year->month->day->hour ... microsecond, etc)
+	my @distinct_bucket_keys = sort { $self->{distinct_buckets}->{ $b }->{order} <=> $self->{distinct_buckets}->{ $a }->{order} } keys %distinct_buckets;
 	
 	# Get the first bucket name 
-	my $first_bucket_name = shift @bucket_keys;
+	my $first_bucket_name = shift @distinct_bucket_keys;
 	
-	### Start recursively descending down into the various date parts, searching in each one
+	# Start recursively descending down into the various date parts, searching in each one
 	$self->_date_descend(
 		%opts,
 		
-		date        	 => $start_date,
-		most_recent_date => $most_recent_date,
-		bucket_name 	 => $first_bucket_name,
-		buckets     	 => \%buckets,
-		bucket_keys 	 => \@bucket_keys,
-		predictions 	 => \%predictions,
+		date        	 	 => $start_date,
+		most_recent_date 	 => $most_recent_date,
+		bucket_name 	 	 => $first_bucket_name,
+		distinct_buckets 	 => \%distinct_buckets,
+		distinct_bucket_keys => \@distinct_bucket_keys,
+		predictions 	 	 => \%predictions,
 	);
 	
-	#Sort the predictions by their total deviation
+	# Sort the predictions by their total deviation
 	my @predictions = sort { $a->{_dtp_deviation} <=> $b->{_dtp_deviation} } values %predictions;
 	
 	return wantarray ? @predictions : $predictions[0];
@@ -303,33 +296,33 @@ sub _date_descend {
 	
 	# Validate the options
 	my %opts = validate(@_, {
-		date        	 => { isa => 'DateTime' },				 # The date to start searching in
-		most_recent_date => { isa => 'DateTime' },               # The most recent date of the dates provided
-		bucket_name 	 => { type => SCALAR },					 # The bucket (date-part) to start searching in
-		buckets     	 => { type => HASHREF },				 # A hashref of all buckets to use when looking for good predictions
-		bucket_keys 	 => { type => ARRAYREF },				 # A list of bucket names that we shift out of to get the next bucket to use
-		stdev_limit 	 => { type => SCALAR },					 # The limit of how many standard deviations to search through
-		predictions 	 => { type => HASHREF },				 # A hashref of predictions we find
-		max_predictions  => { type => SCALAR,     optional => 1 }, # The maxmimum number of predictions to return (prevents overly long searches)
-		min_date		 => { isa  => 'DateTime', optional => 1 }, # If set, make no prediction before 'min_date'
-		callbacks 	     => { type => ARRAYREF,   optional => 1 }, # A list of custom coderefs that are called on each possible prediction
+		date        	 	 => { isa => 'DateTime' },				 # The date to start searching in
+		most_recent_date 	 => { isa => 'DateTime' },               # The most recent date of the dates provided
+		bucket_name 	 	 => { type => SCALAR },					 # The bucket (date-part) to start searching in
+		distinct_buckets 	 => { type => HASHREF },				 # A hashref of all buckets to use when looking for good predictions
+		distinct_bucket_keys => { type => ARRAYREF },				 # A list of bucket names that we shift out of to get the next bucket to use
+		stdev_limit 	 	 => { type => SCALAR },					 # The limit of how many standard deviations to search through
+		predictions 	 	 => { type => HASHREF },				 # A hashref of predictions we find
+		max_predictions  	 => { type => SCALAR,     optional => 1 }, # The maxmimum number of predictions to return (prevents overly long searches)
+		min_date		 	 => { isa  => 'DateTime', optional => 1 }, # If set, make no prediction before 'min_date'
+		callbacks 	     	 => { type => ARRAYREF,   optional => 1 }, # A list of custom coderefs that are called on each possible prediction
 	});	
 	
 	# Copy the options over into simple scalars so it's easier on my eyes
-	my $date 			= delete $opts{'date'};        # Delete these ones out as we'll be overwriting them below
-	my $bucket_name 	= delete $opts{'bucket_name'};
-	my $buckets 		= $opts{'buckets'};
-	my $bucket_keys 	= $opts{'bucket_keys'};
-	my $stdev_limit 	= $opts{'stdev_limit'};
-	my $predictions 	= $opts{'predictions'};
-	my $max_predictions = $opts{'max_predictions'};
-	my $callbacks       = $opts{'callbacks'};
+	my $date 				 = delete $opts{'date'};        # Delete these ones out as we'll be overwriting them below
+	my $bucket_name 		 = delete $opts{'bucket_name'};
+	my $distinct_buckets 	 = $opts{'distinct_buckets'};
+	my $distinct_bucket_keys = $opts{'distinct_bucket_keys'};
+	my $stdev_limit 		 = $opts{'stdev_limit'};
+	my $predictions 		 = $opts{'predictions'};
+	my $max_predictions 	 = $opts{'max_predictions'};
+	my $callbacks       	 = $opts{'callbacks'};
 	
 	# We've reached our max number of predictions, return
 	return 1 if defined $max_predictions && (scalar keys %$predictions) >= $max_predictions;
 	
 	# Get the actual bucket hash for this bucket name
-	my $bucket = $buckets->{ $bucket_name };
+	my $bucket = $distinct_buckets->{ $bucket_name };
 	
 	# The search range is the standard deviation multiplied by the number of standard deviations to search through
 	my $search_range = ceil( $bucket->{stdev} * $stdev_limit );
@@ -339,8 +332,8 @@ sub _date_descend {
 	
 	#The next bucket to search down into
 	my $next_bucket_name = "";
-	if (scalar @$bucket_keys > 0) {
-		$next_bucket_name = shift @$bucket_keys;
+	if (scalar @$distinct_bucket_keys > 0) {
+		$next_bucket_name = shift @$distinct_bucket_keys;
 	}
 	
 	### Next bucket: $next_bucket_name
@@ -383,54 +376,9 @@ sub _date_descend {
 			### Checking new date: $new_date->ymd
 			
 			# If we have no more buckets to search into, determine if this date is a good prediction
-			# by going through each bucket and comparing this date's deviation from that bucket's mean.
-			# If it is within the standard deviation for each bucket then consider it a good match
 			if (! $next_bucket_name) {
-				my $good = 1;
-				my $date_deviation = 0;
-				foreach my $bucket (values %$buckets) {
-					### Checking bucket: $bucket->{accessor}
-					
-					#Get the value for this bucket's access for the $new_date
-					my $cref = $new_date->can( $bucket->{accessor} );
-					my $datepart_val = &$cref($new_date);
-					
-					#If the deviation of this datepart from the mean is within the standard deviation, 
-					# this date ain't good.
-					
-					my $deviation = abs($datepart_val - $bucket->{mean});
-					$date_deviation += $deviation;
-					
-					if ($deviation > $bucket->{stdev} )  {
-						### Outside of stdev: $bucket->{stdev}
-						### Outside by: abs($datepart_val - $bucket->{mean})
-						$good = 0;
-						last;
-					}
-					else {
-						### Inside stdev: $bucket->{stdev}
-						### Inside by: abs($datepart_val - $bucket->{mean})
-					}
-				}
-				
-				#All the dateparts were within their standard deviations, check for callbacks and push this date into the set of predictions
-				if ($good == 1) {
-					### Found good date: $new_date->ymd
-					$new_date->{_dtp_deviation} = $date_deviation;
-					
-					# Run each hook we were passed
-					foreach my $callback (@$callbacks) {
-						# If any hook returns false, this date is a no-go and we can stop processing it
-						if (! &$callback($new_date)) {
-							$good = 0;
-							last;
-						}
-					}
-					
-					# If the date is still considered good, put it date into the hash of predictions
-					if ($good == 1) {
-						$predictions->{ $new_date->hires_epoch() } = $new_date;
-					}
+				if ($self->_distinct_check( %opts, date => $new_date )) {
+					$predictions->{ $new_date->hires_epoch() } = $new_date;
 				}
 			}
 			#If we're not at the smallest bucket, keep searching!
@@ -445,6 +393,134 @@ sub _date_descend {
 	}
 	
 	return 1;
+}
+
+# Check to see if a given date is good according to the supplied distinct buckets by going through each bucket
+# and comparing this date's deviation from that bucket's mean. If it is within the standard deviation for
+# each bucket then consider it a good match.
+sub _distinct_check {
+	my $self = shift;
+	
+	# Temporarily allow extra options
+	validation_options( allow_extra => 1 );
+	my %opts = validate(@_, {
+		date        	 	 => { isa => 'DateTime' },				   # The date to check
+		distinct_buckets 	 => { type => HASHREF },				   # List of enabled buckets
+		callbacks 	     	 => { type => ARRAYREF,   optional => 1 }, # A list of custom coderefs that are called on each possible prediction
+	});
+	validation_options( allow_extra => 0 );
+	
+	my $date             = $opts{'date'};
+	my $distinct_buckets = $opts{'distinct_buckets'};
+	my $callbacks        = $opts{'callbacks'};
+	
+	my $good = 1;
+	my $date_deviation = 0;
+	foreach my $bucket (values %$distinct_buckets) {
+		# Get the value for this bucket's access for the $new_date
+		my $cref = $date->can( $bucket->{accessor} );
+		my $datepart_val = &$cref($date);
+		
+		# If the deviation of this datepart from the mean is within the standard deviation, 
+		# this date ain't good.
+		
+		my $deviation = abs($datepart_val - $bucket->{mean});
+		$date_deviation += $deviation;
+		
+		if ($deviation > $bucket->{stdev} )  {
+			$good = 0;
+			last;
+		}
+	}
+	
+	# All the dateparts were within their standard deviations, check for callbacks and push this date into the set of predictions
+	if ($good == 1) {
+		# Stick the date's total deviation into the object so it can be used for sorting in predict()
+		$date->{_dtp_deviation} = $date_deviation;
+		
+		# Run each hook we were passed
+		foreach my $callback (@$callbacks) {
+			# If any hook returns false, this date is a no-go and we can stop processing it
+			if (! &$callback($date)) {
+				$good = 0;
+				last;
+			}
+		}
+		
+		# If the date is still considered good, return true
+		if ($good == 1) {
+			return 1;
+		}
+		# Otherwise return false
+		else {
+			return 0;
+		}
+	}
+}
+
+# Check to see if a given date is good according to the supplied interval buckets by going through each bucket
+# and comparing this date's deviation from that bucket's mean. If it is within the standard deviation for
+# each bucket then consider it a good match.
+sub _interval_check {
+	my $self = shift;
+	
+	# Temporarily allow extra options
+	validation_options( allow_extra => 1 );
+	my %opts = validate(@_, {
+		date        	 	 => { isa => 'DateTime' },				   # The date to check
+		most_recent_date 	 => { isa => 'DateTime' },                 # The most recent date of the dates provided
+		interval_buckets 	 => { type => HASHREF },				   # List of enabled interval buckets
+		callbacks 	     	 => { type => ARRAYREF,   optional => 1 }, # A list of custom coderefs that are called on each possible prediction
+	});
+	validation_options( allow_extra => 0 );
+	
+	my $date             = $opts{'date'};
+	my $most_recent_date = $opts{'most_recent_date'};
+	my $interval_buckets = $opts{'interval_buckets'};
+	my $callbacks        = $opts{'callbacks'};
+	
+	my $good = 1;
+	my $date_deviation = 0;
+	foreach my $bucket (values %$interval_buckets) {
+		# Get the value for this bucket's access for the $new_date
+		my $cref = $date->can( $bucket->{accessor} );
+		my $datepart_val = &$cref($date);
+		
+		# If the deviation of this datepart from the mean is within the standard deviation, 
+		# this date ain't good.
+		
+		my $deviation = abs($datepart_val - $bucket->{mean});
+		$date_deviation += $deviation;
+		
+		if ($deviation > $bucket->{stdev} )  {
+			$good = 0;
+			last;
+		}
+	}
+	
+	# All the dateparts were within their standard deviations, check for callbacks and push this date into the set of predictions
+	if ($good == 1) {
+		# Stick the date's total deviation into the object so it can be used for sorting in predict()
+		$date->{_dtp_deviation} = $date_deviation;
+		
+		# Run each hook we were passed
+		foreach my $callback (@$callbacks) {
+			# If any hook returns false, this date is a no-go and we can stop processing it
+			if (! &$callback($date)) {
+				$good = 0;
+				last;
+			}
+		}
+		
+		# If the date is still considered good, return true
+		if ($good == 1) {
+			return 1;
+		}
+		# Otherwise return false
+		else {
+			return 0;
+		}
+	}
 }
 
 # Get the mean, variance, and standard deviation for a bucket
