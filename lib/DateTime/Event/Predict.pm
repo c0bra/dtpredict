@@ -27,7 +27,7 @@ use POSIX qw(ceil);
 
 use DateTime::Event::Predict::Profile qw(:buckets);
 
-our $VERSION = '0.01_02';
+our $VERSION = '0.01_03';
 
 
 #===============================================================================#
