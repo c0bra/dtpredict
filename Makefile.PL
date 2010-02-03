@@ -8,7 +8,7 @@ license  'perl';
 no_index directory => 'research';
 no_index file      => 'IDEAS';
 
-build_requires 'Test::More';
+build_requires 'Test::More' => 0.94;
 requires       'DateTime'  => 0;
 requires	   'Params::Validate' => '0.91';
 requires       'Scalar::Util';
