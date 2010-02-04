@@ -21,13 +21,12 @@ use DateTime;
 use Params::Validate qw(:all);
 use Carp qw(carp croak confess);
 use Scalar::Util;
-use Data::Dumper;
 
 use POSIX qw(ceil);
 
 use DateTime::Event::Predict::Profile qw(:buckets);
 
-our $VERSION = '0.01_03';
+our $VERSION = '0.01_05';
 
 
 #===============================================================================#
@@ -67,21 +66,25 @@ sub new {
 # ***NOTE: Should make this validate for 'can' on the DateTime methods we need and on 'isa' for DateTime
 sub dates {
 	my $self   = shift;
-	my ($dates) = @_;
+	my @dates = @_;
 	
-	validate_pos(@_, { type => ARRAYREF, optional => 1 });
+	#validate_pos(@_, { type => , optional => 1 });
 	
-	if (! defined $dates) {
+	if (! defined @dates) {
 		return wantarray ? @{$self->{dates}} : $self->{dates};
 	}
-	elsif (defined $dates) {
-		foreach my $date (@$dates) {
+	else {
+		foreach my $date (@dates) {
 			$self->_trim_date( $date );
 			$self->add_date($date);
 		}
 	}
 	
 	return 1;
+}
+sub add_dates {
+	my $self = shift;
+	return $self->dates(@_);
 }
 
 # Add a date to the list of dates
@@ -251,6 +254,7 @@ sub predict {
 		$bucket->{variance} = $variance;
 		$bucket->{stdev}    = $stdev;
 	}
+	#use Data::Dumper; print "BUCKETS: " . Dumper(\%distinct_buckets);
 	
 	# Get the most recent of the provided dates by sorting them by their epoch seconds
 	my $most_recent_date = (sort { $b->hires_epoch() <=> $a->hires_epoch() } @{ $self->{dates} })[0];
@@ -742,11 +746,12 @@ DateTime::Event::Predict - Predict new dates from a set of dates
 
 Given a set of dates this module will predict the next date or dates to follow.
 
+  use DateTime;
   use DateTime::Event::Predict;
 
   my $dtp = DateTime::Event::Predict->new(
       profile => {
-          buckets => ['day_of_week'],
+          interval_buckets => ['days'],
       },
   );
 
@@ -771,13 +776,13 @@ Given a set of dates this module will predict the next date or dates to follow.
   # 2009-12-18
 
 Here we create a new C<DateTime> object with today's date (it being December 17th, 2009 currently). We
-then use L<add_date|add_date> to add it onto the list of dates that C<DateTime::Event::Predict> (DTP)
+then use L<add_date|"add_date"> to add it onto the list of dates that C<DateTime::Event::Predict> (hereafter DTP)
 will use to make the prediction.
 
 Then we take the 14 previous days (December 16-2) and them on to same list one by one. This gives us a
 good set to make a prediction out of.
 
-Finally we call L<predict|predict> which returns a C<DateTime> object representing the date that DTP has
+Finally we call L<predict|"predict"> which returns a C<DateTime> object representing the date that DTP has
 calculated will come next.
 
 =head1 HOW IT WORKS
@@ -793,18 +798,16 @@ of information.
 When you configure your instance of DTP, you will have to tell what sorts of date-parts to keep
 track of so that it has a good way of making a prediction. Date-parts can be things like
 "day of the week", "day of the year", "is a weekend day", "week on month", "month of year", differences
-between dates counted by "week", or "month", etc. Dtpredict will collect these identifiers from all the
-provided dates into "buckets" for processing later on.
-
-
+between dates counted by "week", or "month", etc. DTP will collect these identifiers from all the
+provided dates into "buckets" for processing later on. For more on buckets see L<DateTime::Event::Predict::Profile/Buckets>.
 
 =head1 EXAMPLES
 
 =over 4
 
-=item Predicting Easter
+=item Predicting the Average First Frost
 
-=item Predicting 
+=item Predicting Easter
 
 =back
 
@@ -815,6 +818,7 @@ provided dates into "buckets" for processing later on.
 Constructor
 
 	my $dtp = DateTime::Event::Predict->new();
+
 
 =head2 dates
 
@@ -855,6 +859,10 @@ Set the profile for which date-parts will be
 
 The following profiles are provided for use by-name:
 
+  default
+  holiday
+  daily
+
 =head2 predict
 
 Arguments: %options
@@ -868,10 +876,8 @@ Predict the next date(s) from the dates supplied.
 If list context C<predict> returns a list of all the predictions, sorted by their probability:
 
   my @predicted_dates = $dtp->predict();
-  
-The number of prediction can be limited with the C<max_predictions> option.
-	
-Possible options
+
+The number of predictions can be limited with the C<max_predictions> option.
 
   $dtp->predict(
       max_predictions => 4, # Once 4 predictions are found, return back
@@ -897,22 +903,6 @@ Arrayref of subroutine callbacks. If any of them return a false value the date w
 Train this instance of DTP
 
 =head1 TODO
-
-=over 4
-
-=item *
-
-It would be be cool if you could pass your own buckets in with a certain type, so you could, say, look for recurrence based
-on intervals of 6 seconds, or 18 days, whatever.
-
-=item *
-
-We need to be able to handle recording more than one interval per diff. If the dates are all offset from each other by 1 day 6 hours (May 1, 3:00; May 2, 6:00),
-we can't be predicting a new date that's exactly 1 day after the most recent one.
-  ^ The best way to do this is probably to record intervals as epoch seconds, so everything is taken into account. Maybe record epoch seconds in addition
-    to whole regular intervals like days & hours.
-
-=back
  
 =head1 AUTHOR
 
@@ -920,9 +910,7 @@ Brian Hann, C<< <brian.hann at gmail.com> >>
 
 =head1 BUGS
 
-Please report any bugs or feature requests to C<bug-datetime-event-predict at rt.cpan.org>, or through
-the web interface at L<http://rt.cpan.org/NoAuth/ReportBug.html?Queue=DateTime-Event-Predict>.  I will be notified, and then you'll
-automatically be notified of progress on your bug as I make changes.
+Please report any bugs or feature requests through the web interface at Lhttp://github.com/c0bra/dtpredict/issues>.
 
 =head1 SUPPORT
 
@@ -935,9 +923,9 @@ You can also look for information at:
 
 =over 4
 
-=item * RT: CPAN's request tracker
+=item * Github's Issue Tracker
 
-L<http://rt.cpan.org/NoAuth/Bugs.html?Dist=DateTime-Event-Predict>
+L<http://github.com/c0bra/dtpredict/issues>
 
 =item * AnnoCPAN: Annotated CPAN documentation
 
@@ -947,15 +935,11 @@ L<http://annocpan.org/dist/DateTime-Event-Predict>
 
 L<http://cpanratings.perl.org/d/DateTime-Event-Predict>
 
-=item * Search CPAN
-
-L<http://search.cpan.org/dist/DateTime-Event-Predict/>
-
 =back
 
 =head1 COPYRIGHT & LICENSE
 
-Copyright 2009 Brian Hann, all rights reserved.
+Copyright 2010 Brian Hann, all rights reserved.
 
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.

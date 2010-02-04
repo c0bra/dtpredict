@@ -30,6 +30,12 @@ our %PROFILES = (
 			'day_of_month',
 			'day_of_year',
 		],
+		interval_buckets => [
+			'days',
+			'weeks',
+			'months',
+			'years',
+		],
 	},
 	holiday => {
 		distinct_buckets => [
@@ -38,8 +44,8 @@ our %PROFILES = (
 		],
 	},
 	daily => {
-		distinct_buckets => [
-			'day_of_year'
+		interval_buckets => [
+			'day',
 		],
 	},
 );
