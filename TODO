@@ -1,5 +1,42 @@
 TODO list for Perl module DateTime::Even::Predict
 
+2/5/2009
+* [NOTE] - Both the "jump" method and silhouette testing have the same problem when it comes to identifying
+  the proper number of clusters: neither can determine whether clustering is appropriate or not. Specifically
+  the "jump" method will always show clustering with "1" as the number of clusters having the best distortion.
+  And the silhouette method cannot be used to test with just 1 cluster as it has to have other centroids to
+  compare against.
+  - [IDEA] - What if we did a reverse test starting with a number of clusters equal to the number of data
+    elements and go backwards? If the fit remains good or gets better going towards the maximum then maybe
+    clustering is inappropriate? OR perhaps it will ALWAYS get better going towards the maximum.
+  - [IDEA] - Maybe we could count back from the maximum number of clusters a number of steps equal to the
+    square root of the maximum number of clusters, rounded up (so 4 for 10 clusters, 23 for 500 clusters)
+    and use moving averages on the silhouette average dissimilarity to see if there is a downwards trend. Then
+    use the same number of steps to check upwards from 2 clusters. If there is a number of clusters in the
+    bottom section that has a greater average dissimilarity than the one with the max avg dissimilarity in the
+    top section, then the clustering operation needs to be fully done. However if there is no good clustering
+    in the bottom section and the avg dissimilarities trend downwards from the max number of clusters, then
+    clustering is probably not a good fit and we can skip it. This is all assumptions but I haven't found a
+    test case so far that disproves this, although admittedly I have only tested a handful of data sets.
+    - Problem: clustering takes (possibly) exponentially longer to cluster as k increases.
+* [NOTE] - So far the silhouette method seems about 10% faster in my simple benchmarking, which might not
+  be the most accurate metric but it's probably close enough.
+
+2/4/2009
+* [IDEA] - It may be possible to dynamically discover which date-parts to use for predictions by measuring
+  ALL of them (i.e. get their stdev and variance) and see which ones have the most importance statistically
+  (lowest stdev, I believe) and then scale the weight of each bucket to each other. So the most important
+  bucket gains a weight of 1, and each bucket scales to that one based on the size of its standard deviation.
+    - One problem with this is larger date-parts (i.e. years or epoch second intervals) will have larger
+      standard deviations than, say "day of week". Perhaps the stdev can be scaled to the average size of
+      the items in the set. OR perhaps there's already an established way of normalizing stdevs to a scale
+      of 0 to 1.
+      - It looks like this is called The Coefficient of Variation: http://en.wikipedia.org/wiki/Coefficient_of_variation
+      	"The coefficient of variation is useful because the standard deviation of data must always be understood in the
+      	context of the mean of the data. The coefficient of variation is a dimensionless number. So when comparing
+      	between data sets with different units or widely different means, one should use the coefficient of
+      	variation for comparison instead of the standard deviation."
+
 2/2/2009
 * [IDEA] It would be be cool if you could pass your own buckets in with a certain type, so you could, say,
   look for recurrence based on intervals of 6 seconds, or 18 days, whatever.

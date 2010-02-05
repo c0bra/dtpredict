@@ -1,5 +1,15 @@
 Revision history for DateTime-Event-Predict
 
-0.01    Date/time
-        First version, released on an unsuspecting world.
+0.01_04
+
+	Bugs fixed:
+	
+	Features added:
+	 - Added _generate_bucket_statistics() method that will take the mean, stdev and variance
+	   from _bucket_statistics and stick them in the bucket(s) automatically.
+
+0.01_04 2010-01-31 00:21:22
+	
+	Bug fixed:
+	 - Fixed test in t/09-today.t failing when the current day was at end of month.
 

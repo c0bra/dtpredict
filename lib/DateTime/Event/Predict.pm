@@ -248,11 +248,7 @@ sub predict {
 	
 	# Figure the mean, variance, and standard deviation for each bucket
 	foreach my $bucket (values %distinct_buckets, values %interval_buckets) {
-		my ($mean, $variance, $stdev) = $self->_bucket_statistics($bucket);
-		
-		$bucket->{mean}     = $mean;
-		$bucket->{variance} = $variance;
-		$bucket->{stdev}    = $stdev;
+		$self->_generate_bucket_statistics($bucket);
 	}
 	#use Data::Dumper; print "BUCKETS: " . Dumper(\%distinct_buckets);
 	
@@ -655,6 +651,22 @@ sub _interval_check {
 	}
 }
 
+# Generate the bucket statistics with _bucket_statistics and stick it in the bucket
+sub _generate_bucket_statistics {
+	my $self = shift;
+	my ($bucket) = @_;
+	
+	validate_pos(@_, { type => HASHREF });
+	
+	my ($mean, $variance, $stdev) = $self->_bucket_statistics($bucket);
+	
+	$bucket->{mean}     = $mean;
+	$bucket->{variance} = $variance;
+	$bucket->{stdev}    = $stdev;
+	
+	return $bucket;
+}
+
 # Get the mean, variance, and standard deviation for a bucket
 sub _bucket_statistics {
 	my $self   = shift;
@@ -834,9 +846,13 @@ Called with an arrayref to a list of L<DateTime|DateTime> objects (C<\@dates>) t
 
 Arguments: $date
 
-Return value: 
-
 Adds a date on to the list of dates in the instance, where C<$date> is a L<DateTime|DateTime> object.
+
+=head2 add_dates
+
+Arguments: @dates
+
+Add a list of dates onto the list of dates in this instance.
 
 =head2 profile
 
