@@ -1,5 +1,26 @@
 TODO list for Perl module DateTime::Even::Predict
 
+2/8/2009
+* [NOTE] - I may have found a solution to the clustering problem. The S-means algorithm starts with an initial
+  value for k (default 1) and then adds and removes clusters as needed. It relies on a user-defined
+  threshold to determine whether a data point should be added to a cluster or put into a new cluster
+  and if I use to standard deviation in the distances of each data point from the one before it then
+  it seems to work perfectly in situations where data should not be clustered, i.e. given
+  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as the data points it will provide 10 clusters. If we add "12" onto
+  the data list it will provide 11 clusters.
+  - [NOTE] - However I just tried adding "15" instead of 12 onto the list and it creates 6 clusters
+    rather than 11, essentially splitting the data in half. This might not be what we want, but it
+    could be as the only thing we'll be using clustering for currently is finding the initial search point
+    to look for date predictions from. If it gives a proper distance to use to find that search point then
+    it could be OK.
+* [IDEA] - We might want to add the capability to use multiple search points. For situations where we are
+  clustering it's possible that the next date could go in the most recent cluster, or it could go in a
+  new cluster. Searching from both the most recent date in the most recent cluster and the new cluster
+  start point would be a good idea.
+  - [IDEA] - We could also measure the average and standard deviation in the number of elements per cluster
+    to determine if it should go in the most recent cluster or a new one.
+  
+
 2/5/2009
 * [NOTE] - Both the "jump" method and silhouette testing have the same problem when it comes to identifying
   the proper number of clusters: neither can determine whether clustering is appropriate or not. Specifically
