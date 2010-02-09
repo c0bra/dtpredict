@@ -1,38 +1,94 @@
 TODO list for Perl module DateTime::Even::Predict
 
-2/8/2009
+------------------------LEGEND-------------------------
+[TODO] - Something I have to do
+[TODO/DONE] - Something I had to do and did
+[BUG] - Bug I found
+[FIX] - Bugfix
+[FIX/NOT] - Bugfix that didn't actually fix anything
+[PROBLEM] - Problem with methodology
+[IDEA] - Self-explanatory
+[NOTE] - Also self-explanatory
+-------------------------------------------------------
+
+
+2/9/2010
+* [PROBLEM] I just ran another test and DateTime::in_units() is definitely NOT working. Using it on the
+  duration object for "1/1/2010 - 1/1/2009" results in 0, not 365.
+  - [FIX/NOT] I have now replaced this with a rather ugly string of nested calls to the delta_* methods in
+    DateTime::Duration. See the bottom of this page: http://datetime.perl.org/index.cgi?FAQSampleCalculations
+    at the "How can I calculate the difference in days between dates" heading.
+    - [TODO] Write a test to check this. Using interval_buckets => ['days'] on a two dates separated
+      by 1 year should suffice. We will also wants tests for all the other delta_* accessors.
+    - [TODO/DONE] Turn the ugly coderef calls into a simple method where you pass in the two dates and the
+      accessor name so it's all in one place.
+    - [BUG] Nothing is fixed. delta_days() is the only delta_ method that exists in DateTime. The others
+      work differently and are in DateTime::Duration.
+* [BUG] - Clustering being on by default is causing failures in some tests.
+* [TODO] - Right now clustering is retraining the DTP instance by replacing the supplied dates with the
+  cluster centroids. That might not be the best way to go about it.
+* [BUG] - There is no delta_years() method in DateTime::Duration, it has to do with how date math works.
+  We'll have to find those intervals some other way.
+* [IDEA] - For fixing the search range problem (bug note from yesterday). Perhaps for the interval side we
+  can take the mean epoch interval between takes and multiply it by the 'stdev_limit' option? I need to
+  write a test for this either way.
+  - [PROBLEM] - A huge problem with this is if we are creating a fake bucket with the cluster intervals
+    then the difference in epoch seconds is going to be HUGE and will create a huge range.
+    - This problem will exist for any bucket with a large variance in values. Like for dates that are all
+      500 years apart.
+* [BUG] - _trim_dates() only works on distinct_buckets. It needs to work on interval buckets too.
+* [PROBLEM] - Right now we send the first prediction we find, but wouldn't it be better to find more and
+  then send the best?
+* [FIX] - Fixed date trimming issue. Dates should trim properly now
+* [BUG] - Clustering just is not working when it comes to finding the right element in a cluster. We may
+  need to use the interval between clusters as a bucket so we can restrict the predictions we make. Right
+  now if we have clusters where the outermost elements are ALWAYS a certain interval apart, i.e. with a 
+  standard deviation of 0, we will still make bad predictions because we're not using that interval for
+  anything.
+  - What if we create a fake bucket prefilled with all the statistical information. That's hacky but it
+    could work. One problem to solve is we have to compare different in dates using epoch seconds. We
+    can't use the 'seconds' accessor because it only shows the difference in clock seconds, not actual
+    interval seconds.
+* [BUG] - I have the fake clustering bucket on now, and it appears to be working, however the good prediction
+  for 13-cluster.t is failing to fall within the stdev for the 'days' bucket. The stdev is 2.17 and this
+  date is 5, as it's 5 days from the closest date, which is CORRECT because the mean distance between closest
+  member elements of the clusters is 5, and the stdev for that is 0. So it HAS to be 5 days away, but also
+  must fit in the normal days stdev? That might not work :(
+
+
+2/8/2010
 * [NOTE] - I may have found a solution to the clustering problem. The S-means algorithm starts with an initial
   value for k (default 1) and then adds and removes clusters as needed. It relies on a user-defined
   threshold to determine whether a data point should be added to a cluster or put into a new cluster
-  and if I use to standard deviation in the distances of each data point from the one before it then
+  and if I use the standard deviation for the distances of each data point from the one before it then
   it seems to work perfectly in situations where data should not be clustered, i.e. given
   [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as the data points it will provide 10 clusters. If we add "12" onto
   the data list it will provide 11 clusters.
-  - [NOTE] - However I just tried adding "15" instead of 12 onto the list and it creates 6 clusters
+  - [NOTE] However I just tried adding "15" instead of 12 onto the list and it creates 6 clusters
     rather than 11, essentially splitting the data in half. This might not be what we want, but it
     could be as the only thing we'll be using clustering for currently is finding the initial search point
     to look for date predictions from. If it gives a proper distance to use to find that search point then
     it could be OK.
-* [IDEA] - We might want to add the capability to use multiple search points. For situations where we are
+* [IDEA] We might want to add the capability to use multiple search points. For situations where we are
   clustering it's possible that the next date could go in the most recent cluster, or it could go in a
   new cluster. Searching from both the most recent date in the most recent cluster and the new cluster
   start point would be a good idea.
-  - [IDEA] - We could also measure the average and standard deviation in the number of elements per cluster
+  - [IDEA] We could also measure the average and standard deviation in the number of elements per cluster
     to determine if it should go in the most recent cluster or a new one.
-  - [NOTE] - This might be moot if we cannot rely on our clustering algorith to give the "true" number oc
+  - [NOTE] This might be moot if we cannot rely on our clustering algorith to give the "true" number oc
     clusters. With S-means we see clustering happen when we might not want it to but can probably still
     provide good results. For instances like [1..5, 15] it might not matter whether the new date goes in
     the most recent cluster or in a new one. They could be so close that the end result would be the same.
     However for an instance like [1..10, 200] it could be very useful to have multiple search points.
-  - [NOTE] - Searching for a date in a new cluster can probably produce a result just as feasible (in terms
+  - [NOTE] Searching for a date in a new cluster can probably produce a result just as feasible (in terms
     of date-part and interval validity), however we would probably want to add some metric for choosing
     between the most recent cluster and a new cluster, such as the most recent cluster's variance in the
     number of member elements from the average, and the new cluster's variance in distance from the most
     recent date (perhaps).
-* [NOTE] - We may want to add the bucket statistics into train(). They'll need to be there so we can
+* [NOTE] We may want to add the bucket statistics into train(). They'll need to be there so we can
   auto-enable the buckets we want if no profile is specified.
-* [PROBLEM] - How do we trim dates when there is no profile set? Do we need to?
-* [PROBLEM] - Date intervals aren't working quite like we want them to. In 13-cluster.t it's saying there's
+* [PROBLEM] How do we trim dates when there is no profile set? Do we need to?
+* [PROBLEM] Date intervals aren't working quite like we want them to. In 13-cluster.t it's saying there's
   an average interval of 3 days with a stdev of 0. That's SORT OF true, in that the day of the week of each
   date varies from the one before it by 3 days (the centroids are each 10 days apart). However if we want
   to use the full delta of days (i.e. 10 days, not 3) the DateTime FAQ says we need to use delta_days()
@@ -42,25 +98,26 @@ TODO list for Perl module DateTime::Even::Predict
   which interval bucket we enable for prediction. However a single date-part delta between two dates will
   vary from bucket to bucket. I can see how both would be good to have. I just don't know which direction to
   go in.
-* [BUG] - The way we are creating search ranges is improper. It should not be tied to the standard deviation
+  - [NOTE!] using DateTime::in_units() seems to provide the full delta result.
+* [BUG] The way we are creating search ranges is improper. It should not be tied to the standard deviation
   of the bucket in question. If the start date that we are supplied is outside that standard deviation then
   we won't find a good prediction. On the other hand if we are given a wide enough search range then we have
   a chance to find a good prediction, and the deviation checks in the *date_descend() methods will prevent
   use from giving bad predictions despite the search range. THE PROBLEM is deciding what range to use.
-* [IDEA] - Rather than using the epoch intervals between cluster centroids, should we use the interval between
+* [IDEA] Rather than using the epoch intervals between cluster centroids, should we use the interval between
   the first and last members of each cluster? For a very wide date cluster if we start searching at the new
   centroid rather than near where we suspect the first member should go, we might miss the prediction.
 
-2/5/2009
-* [NOTE] - Both the "jump" method and silhouette testing have the same problem when it comes to identifying
+2/5/2010
+* [NOTE] Both the "jump" method and silhouette testing have the same problem when it comes to identifying
   the proper number of clusters: neither can determine whether clustering is appropriate or not. Specifically
   the "jump" method will always show clustering with "1" as the number of clusters having the best distortion.
   And the silhouette method cannot be used to test with just 1 cluster as it has to have other centroids to
   compare against.
-  - [IDEA] - What if we did a reverse test starting with a number of clusters equal to the number of data
+  - [IDEA] What if we did a reverse test starting with a number of clusters equal to the number of data
     elements and go backwards? If the fit remains good or gets better going towards the maximum then maybe
     clustering is inappropriate? OR perhaps it will ALWAYS get better going towards the maximum.
-  - [IDEA] - Maybe we could count back from the maximum number of clusters a number of steps equal to the
+  - [IDEA] Maybe we could count back from the maximum number of clusters a number of steps equal to the
     square root of the maximum number of clusters, rounded up (so 4 for 10 clusters, 23 for 500 clusters)
     and use moving averages on the silhouette average dissimilarity to see if there is a downwards trend. Then
     use the same number of steps to check upwards from 2 clusters. If there is a number of clusters in the
@@ -70,12 +127,12 @@ TODO list for Perl module DateTime::Even::Predict
     clustering is probably not a good fit and we can skip it. This is all assumptions but I haven't found a
     test case so far that disproves this, although admittedly I have only tested a handful of data sets.
     - Problem: clustering takes (possibly) exponentially longer to cluster as k increases.
-* [NOTE] - So far the silhouette method seems about 10% faster in my simple benchmarking, which might not
+* [NOTE] So far the silhouette method seems about 10% faster in my simple benchmarking, which might not
   be the most accurate metric but it's probably close enough.
 
 
-2/4/2009
-* [IDEA] - It may be possible to dynamically discover which date-parts to use for predictions by measuring
+2/4/2010
+* [IDEA] It may be possible to dynamically discover which date-parts to use for predictions by measuring
   ALL of them (i.e. get their stdev and variance) and see which ones have the most importance statistically
   (lowest stdev, I believe) and then scale the weight of each bucket to each other. So the most important
   bucket gains a weight of 1, and each bucket scales to that one based on the size of its standard deviation.
@@ -90,7 +147,7 @@ TODO list for Perl module DateTime::Even::Predict
       	variation for comparison instead of the standard deviation."
 
 
-2/2/2009
+2/2/2010
 * [IDEA] It would be be cool if you could pass your own buckets in with a certain type, so you could, say,
   look for recurrence based on intervals of 6 seconds, or 18 days, whatever.
 * We need to be able to handle recording more than one interval per diff. If the dates are all offset from
@@ -100,14 +157,15 @@ TODO list for Perl module DateTime::Even::Predict
       into account. Maybe record epoch seconds in addition to whole regular intervals like days & hours.
 
 
-2/1/2009
-* Add kls to Predict::new(), and then allow predict() to override them or add news ones (??)
-* add_date() and add_dates() needs to properly validate dates passed in
+2/1/2010
+* [TODO] Add prediction optionss to Predict::new(), and then allow predict() to override them or add news ones
+* [TODO] add_date() and add_dates() needs to properly validate dates passed in
 
 
-1/27/2009
-* Profile.pm needs to check bucket names that get passed in to see if they actually exist. Right now
+1/27/2010
+* [BUG] Profile.pm needs to check bucket names that get passed in to see if they actually exist. Right now
   it tries to clone them and dies ungracefully.
+  - [TODO] Write a test for this as well.
 
 
 12/22/2009

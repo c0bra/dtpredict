@@ -56,7 +56,7 @@ our %DISTINCT_BUCKETS = (
 		type      => 'distinct',
 		accessor  => 'nanosecond',
 		duration  => 'nanoseconds',
-		trimmable => 1,
+		trimmable => 0,
 		order     => 1,
 	),
 	#microsecond => DateTime::Event::Predict::Profile::Bucket->new(
@@ -198,48 +198,62 @@ our %INTERVAL_BUCKETS = (
 		name       => 'nanoseconds',
 		type	   => 'interval',
 		accessor   => 'nanoseconds', # Accessor in the DateTime::Duration object that we use to get the difference
+		trimmable  => 0,
 		order      => 0,             # Order of precedence of this bucket (larger means it takes precedence)
     ),
     seconds => DateTime::Event::Predict::Profile::Bucket->new(
 		name       => 'seconds',
 		type	   => 'interval',
 		accessor   => 'seconds',
+		trimmable  => 0,
+		trim_to    => 'second',
 		order      => 1,
     ),
 	minutes => DateTime::Event::Predict::Profile::Bucket->new(
 		name       => 'minutes',
 		type	   => 'interval',
 		accessor   => 'minutes',
+		trimmable  => 1,
+		trim_to    => 'minute',
 		order      => 2,
     ),
     hours => DateTime::Event::Predict::Profile::Bucket->new(
     	name       => 'hours',
     	type	   => 'interval',
 		accessor   => 'hours',
+		trimmable  => 1,
+		trim_to    => 'hour',
 		order      => 3,
     ),
     days => DateTime::Event::Predict::Profile::Bucket->new(
     	name       => 'days',
     	type	   => 'interval',
 		accessor   => 'days',
+		trimmable  => 1,
+		trim_to    => 'day',
 		order      => 4,
     ),
     weeks => DateTime::Event::Predict::Profile::Bucket->new(
     	name       => 'weeks',
     	type	   => 'interval',
 		accessor   => 'weeks',
+		trimmable  => 0,
 		order      => 5,
     ),
     months => DateTime::Event::Predict::Profile::Bucket->new(
     	name       => 'months',
     	type	   => 'interval',
 		accessor   => 'months',
+		trimmable  => 1,
+		trim_to    => 'month',
 		order      => 6,
     ),
     years => DateTime::Event::Predict::Profile::Bucket->new(
     	name       => 'years',
     	type	   => 'interval',
 		accessor   => 'years',
+		trimmable  => 1,
+		trim_to    => 'year',
 		order      => 7,
     ),
 );
@@ -397,9 +411,15 @@ sub new {
     	accessor  => { type => SCALAR },
     	duration  => { type => SCALAR, optional => 1 }, # Interval buckets don't have durations
     	trimmable => { type => SCALAR, optional => 1 },
+    	trim_to   => { type => SCALAR, optional => 1 },
     	on        => { type => SCALAR, default  => 1 },
     	weight    => { type => SCALAR, default  => 1 },
     });
+    
+    # Default using this bucket's accessor to trim to if no trim_to accessor is specified
+    if ($opts{trimmable} && (! defined $opts{trim_to} || ! $opts{trim_to})) {
+    	$opts{trim_to} = $opts{accessor};
+    }
     
     my $class = ref( $proto ) || $proto;
     
@@ -442,10 +462,18 @@ sub duration {
 	return $self->{duration};
 }
 
+# Whether we can truncate a date to the date-part associated with this bucket or not.
+#  The trimmable date parts are: "year", "month", "week", "day", "hour", "minute", or "second"
 sub trimmable {
 	my $self = shift;
 	
 	return $self->{trimmable};
+}
+
+sub trim_to {
+	my $self = shift;
+	
+	return $self->{trim_to};
 }
 
 # Get or set this bucket's weight
