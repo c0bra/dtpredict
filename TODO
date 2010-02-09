@@ -42,6 +42,14 @@ TODO list for Perl module DateTime::Even::Predict
   which interval bucket we enable for prediction. However a single date-part delta between two dates will
   vary from bucket to bucket. I can see how both would be good to have. I just don't know which direction to
   go in.
+* [BUG] - The way we are creating search ranges is improper. It should not be tied to the standard deviation
+  of the bucket in question. If the start date that we are supplied is outside that standard deviation then
+  we won't find a good prediction. On the other hand if we are given a wide enough search range then we have
+  a chance to find a good prediction, and the deviation checks in the *date_descend() methods will prevent
+  use from giving bad predictions despite the search range. THE PROBLEM is deciding what range to use.
+* [IDEA] - Rather than using the epoch intervals between cluster centroids, should we use the interval between
+  the first and last members of each cluster? For a very wide date cluster if we start searching at the new
+  centroid rather than near where we suspect the first member should go, we might miss the prediction.
 
 2/5/2009
 * [NOTE] - Both the "jump" method and silhouette testing have the same problem when it comes to identifying

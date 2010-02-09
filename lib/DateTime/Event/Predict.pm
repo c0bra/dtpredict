@@ -208,13 +208,16 @@ sub train {
 		# Get a DateTime::Duration object representing the diff between the dates
 		my $dur = $date->subtract_datetime( $prev_date );
 		
+		#print "$self->{trained} DURATION: " . $dur->in_units('days') . "\n";
+		
 		# Increment the interval buckets
 		# Intervals: here we default to the largest interval that we can see. So, for instance, if
 		#   there is a difference of months we will not increment anything smaller than that.
 		while (my ($name, $bucket) = each %{ $self->{interval_buckets} }) {
-			my $cref = $dur->can( $bucket->accessor );
-				croak "Can't call accessor '" . $bucket->accessor . "' on " . ref($dur) . " object" unless $cref;
-			my $interval = &$cref($dur);
+			#my $cref = $dur->can( $bucket->accessor );
+			#	croak "Can't call accessor '" . $bucket->accessor . "' on " . ref($dur) . " object" unless $cref;
+			#my $interval = &$cref($dur);
+			my $interval = $dur->in_units( $bucket->accessor );
 			$bucket->{buckets}->{ $interval }++;
 		}
 		
@@ -306,7 +309,7 @@ sub predict {
 		$start_date = $most_recent_date + $duration;
 	}
 	
-	use Data::Dumper; print Dumper($self);
+	#use Data::Dumper; print Dumper($self);
 	
 	$self->_print_dates();
 	
@@ -514,6 +517,7 @@ sub _date_descend_interval {
 	
 	# The search range is the standard deviation multiplied by the number of standard deviations to search through
 	my $search_range = ceil( $bucket->{stdev} * $stdev_limit );
+	$search_range = 1 if $search_range < 1;
 	
 	#The next bucket to search down into
 	my $next_bucket_name = "";
@@ -527,6 +531,8 @@ sub _date_descend_interval {
 		
 		# Put forwards and backwards in the searches
 		my @searches = ($search_inc, $neg_search_inc);
+		
+		print "SEARCHES: " . join(', ', @searches) . "\n";
 		
 		# Make sure we only search on 0 once (i.e. 0 * -1 == 0)
 		@searches = (0) if $search_inc == 0;
@@ -669,9 +675,10 @@ sub _interval_check {
 	my $dur = $date->subtract_datetime( $most_recent_date );
 	
 	foreach my $bucket (values %$interval_buckets) {
-		my $cref = $dur->can( $bucket->accessor );
-			croak "Can't call accessor '" . $bucket->accessor . "' on " . ref($dur) . " object" unless $cref;
-		my $interval = &$cref($dur);
+		#my $cref = $dur->can( $bucket->accessor );
+		#	croak "Can't call accessor '" . $bucket->accessor . "' on " . ref($dur) . " object" unless $cref;
+		#my $interval = &$cref($dur);
+		my $interval = $dur->in_units( $bucket->accessor );
 		
 		my $deviation = abs($interval - $bucket->{mean});
 		$date_deviation += $deviation;
