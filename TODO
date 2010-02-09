@@ -19,7 +19,29 @@ TODO list for Perl module DateTime::Even::Predict
   start point would be a good idea.
   - [IDEA] - We could also measure the average and standard deviation in the number of elements per cluster
     to determine if it should go in the most recent cluster or a new one.
-  
+  - [NOTE] - This might be moot if we cannot rely on our clustering algorith to give the "true" number oc
+    clusters. With S-means we see clustering happen when we might not want it to but can probably still
+    provide good results. For instances like [1..5, 15] it might not matter whether the new date goes in
+    the most recent cluster or in a new one. They could be so close that the end result would be the same.
+    However for an instance like [1..10, 200] it could be very useful to have multiple search points.
+  - [NOTE] - Searching for a date in a new cluster can probably produce a result just as feasible (in terms
+    of date-part and interval validity), however we would probably want to add some metric for choosing
+    between the most recent cluster and a new cluster, such as the most recent cluster's variance in the
+    number of member elements from the average, and the new cluster's variance in distance from the most
+    recent date (perhaps).
+* [NOTE] - We may want to add the bucket statistics into train(). They'll need to be there so we can
+  auto-enable the buckets we want if no profile is specified.
+* [PROBLEM] - How do we trim dates when there is no profile set? Do we need to?
+* [PROBLEM] - Date intervals aren't working quite like we want them to. In 13-cluster.t it's saying there's
+  an average interval of 3 days with a stdev of 0. That's SORT OF true, in that the day of the week of each
+  date varies from the one before it by 3 days (the centroids are each 10 days apart). However if we want
+  to use the full delta of days (i.e. 10 days, not 3) the DateTime FAQ says we need to use delta_days()
+  twice. So the question is do we want to switch it so that the full delta is calculated rather than just
+  that date-part's delta? Or do we maybe want BOTH calculated? The thing is, the full delta for each
+  date-part is going to be equal. A full delta of 7 days is 1 week is 604,800 seconds, and it doesn't matter
+  which interval bucket we enable for prediction. However a single date-part delta between two dates will
+  vary from bucket to bucket. I can see how both would be good to have. I just don't know which direction to
+  go in.
 
 2/5/2009
 * [NOTE] - Both the "jump" method and silhouette testing have the same problem when it comes to identifying
@@ -43,6 +65,7 @@ TODO list for Perl module DateTime::Even::Predict
 * [NOTE] - So far the silhouette method seems about 10% faster in my simple benchmarking, which might not
   be the most accurate metric but it's probably close enough.
 
+
 2/4/2009
 * [IDEA] - It may be possible to dynamically discover which date-parts to use for predictions by measuring
   ALL of them (i.e. get their stdev and variance) and see which ones have the most importance statistically
@@ -58,6 +81,7 @@ TODO list for Perl module DateTime::Even::Predict
       	between data sets with different units or widely different means, one should use the coefficient of
       	variation for comparison instead of the standard deviation."
 
+
 2/2/2009
 * [IDEA] It would be be cool if you could pass your own buckets in with a certain type, so you could, say,
   look for recurrence based on intervals of 6 seconds, or 18 days, whatever.
@@ -67,20 +91,22 @@ TODO list for Perl module DateTime::Even::Predict
     ^ The best way to do this is probably to record intervals as epoch seconds, so everything is taken
       into account. Maybe record epoch seconds in addition to whole regular intervals like days & hours.
 
+
 2/1/2009
 * Add kls to Predict::new(), and then allow predict() to override them or add news ones (??)
 * add_date() and add_dates() needs to properly validate dates passed in
+
 
 1/27/2009
 * Profile.pm needs to check bucket names that get passed in to see if they actually exist. Right now
   it tries to clone them and dies ungracefully.
 
+
 12/22/2009
 * Can we combine the interval and distinct buckets into one full bucket list? The names should mean there's no
   collisions (just confusion, maybe too much) and the 'type' identifier says how to use it. Probably not a
   good idea.
-* train() needs to reset the bucket values each time it's called; right now they'll just increment endlessly
-  -- This should be done but I'm not 100% sure.
+
 
 12/18/2009
 * Is there a way to use import() outside of a BEGIN block so that export tags can be imported?
@@ -89,15 +115,18 @@ TODO list for Perl module DateTime::Even::Predict
 * We could create a bucket for is_weekend_day and create a custom callback for the accessor.
   We'd have to do duration differently, though.
 
+
 12/17/2009
 * Finish writing up pod so module can be alpha-released on CPAN
 * Right now we are trimming off any date-part that is smaller than the smallest bucket we
   have turned on. We need to make it so this is done in the comparisons, rather than
   actually modifying dates we are given. OR MAYBE NOT, because of truncate()?
 
+
 12/16/2009
 * Due to possible DoS attack that can be done through very large duration operations (thousands
   of years in the future, etc), we'll need to add some sort of protection, I think.
+
 
 ??/??/????
 * Add a clustering() method so that clustering can be turned on or off whenever

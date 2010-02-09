@@ -21,6 +21,7 @@ use DateTime;
 use Params::Validate qw(:all);
 use Carp qw(carp croak confess);
 use Scalar::Util;
+use List::Util qw(max);
 
 use POSIX qw(ceil);
 
@@ -35,9 +36,10 @@ sub new {
     my $proto = shift;
     
     my %opts = validate(@_, {
-    	dates       => { type => ARRAYREF, optional => 1 },
+    	dates       => { type => ARRAYREF, 					optional => 1 },
     	profile     => { type => SCALAR | OBJECT | HASHREF, optional => 1 },
-    	#stdev_limit => { type => SCALAR,          default  => 2 },
+    	#stdev_limit => { type => SCALAR,          			default  => 2 },
+    	clustering  => { type => SCALAR | HASHREF, 			optional => 1, },
     });
     
     my $class = ref( $proto ) || $proto;
@@ -55,9 +57,11 @@ sub new {
     };
     bless($self, $class);
     
-    $opts{profile} = 'default' if ! $opts{profile};
+    #$opts{profile} = 'default' if ! $opts{profile};
     
-    $self->profile( $opts{profile} );
+    if ( $opts{profile} ) {
+    	$self->profile( $opts{profile} );
+	}
     
     return $self;
 }
@@ -74,6 +78,7 @@ sub dates {
 		return wantarray ? @{$self->{dates}} : $self->{dates};
 	}
 	else {
+		$self->{dates} = [];
 		foreach my $date (@dates) {
 			$self->_trim_date( $date );
 			$self->add_date($date);
@@ -130,23 +135,12 @@ sub profile {
 	
 	# Add the distinct buckets
     foreach my $bucket ( $new_profile->_distinct_buckets() ) {
-    	$self->{distinct_buckets}->{ $bucket->name } = {
-    		accessor => $bucket->accessor,
-    		duration => $bucket->duration,
-    		order    => $bucket->order,
-    		weight   => $bucket->weight,
-    		buckets  => {},
-    	};
+    	$self->{distinct_buckets}->{ $bucket->name } = $bucket->clone();
     }
     
     # Add the interval buckets
     foreach my $bucket ( $new_profile->_interval_buckets() ) {
-    	$self->{interval_buckets}->{ $bucket->name } = {
-    		accessor => $bucket->accessor,
-    		order    => $bucket->order,
-    		weight   => $bucket->weight,
-    		buckets  => {},
-    	};
+    	$self->{interval_buckets}->{ $bucket->name } = $bucket->clone();
     }
 	
 	$self->{profile} = $new_profile;
@@ -158,17 +152,35 @@ sub profile {
 sub train {
 	my $self = shift;
 	
+	# Clear out anything already in the the buckets
+	foreach my $bucket (values %{$self->{distinct_buckets}}, values %{$self->{interval_buckets}} ) {
+		$bucket->{buckets} = {};
+		
+		# Delete the statistics
+		delete $bucket->{mean};
+		delete $bucket->{variance};
+		delete $bucket->{stdev};
+	}
+	
+	# If no profile has been set, initialize every bucket possible for automatic determination of which ones to use
+	if (! $self->profile) {
+		# Add the distinct buckets
+	    foreach my $bucket ( keys %DISTINCT_BUCKETS ) {
+	    	$self->{distinct_buckets}->{ $bucket->name } = $bucket->clone();
+	    }
+	    
+	    # Add the interval buckets
+	    foreach my $bucket ( keys %INTERVAL_BUCKETS ) {
+	    	$self->{interval_buckets}->{ $bucket->name } = $bucket->clone();
+	    }
+	}
+	
 	# Sort the dates chronologically
 	my @dates = sort { $a->hires_epoch() <=> $b->hires_epoch() } @{ $self->{dates} }; #*** Need to convert this to DateTime->compare($dt1, $dt2)
 	
 	# Last and first dates
-	$self->{last_date} = $dates[$#dates];
+	$self->{last_date}  = $dates[$#dates];
 	$self->{first_date} = $dates[0];
-	
-	# Clear out anything already in the the buckets
-	foreach my $bucket (values %{$self->{distinct_buckets}}, values %{$self->{interval_buckets}} ) {
-		$bucket->{buckets} = {};
-	}
 	
 	my $prev_date;
 	foreach my $index (0 .. $#{ $self->{dates} }) {
@@ -183,8 +195,8 @@ sub train {
 		# Increment the date-part buckets
 		while (my ($name, $dbucket) = each %{ $self->{distinct_buckets} }) {
 			# Get the accessor method by using can()
-			my $cref = $date->can( $dbucket->{accessor} );
-				croak "Can't call accessor '" . $dbucket->{accessor} . "' on " . ref($date) . " object" unless $cref;
+			my $cref = $date->can( $dbucket->accessor );
+				croak "Can't call accessor '" . $dbucket->accessor . "' on " . ref($date) . " object" unless $cref;
 				
 			# Increment the number of instances for the value given when we use this bucket's accessor on $date
 			$dbucket->{buckets}->{ &$cref($date) }++;
@@ -200,8 +212,8 @@ sub train {
 		# Intervals: here we default to the largest interval that we can see. So, for instance, if
 		#   there is a difference of months we will not increment anything smaller than that.
 		while (my ($name, $bucket) = each %{ $self->{interval_buckets} }) {
-			my $cref = $dur->can( $bucket->{accessor} );
-				croak "Can't call accessor '" . $bucket->{accessor} . "' on " . ref($dur) . " object" unless $cref;
+			my $cref = $dur->can( $bucket->accessor );
+				croak "Can't call accessor '" . $bucket->accessor . "' on " . ref($dur) . " object" unless $cref;
 			my $interval = &$cref($dur);
 			$bucket->{buckets}->{ $interval }++;
 		}
@@ -220,6 +232,16 @@ sub train {
 	# Average interval between dates in epoch seconds
 	$self->{mean_epoch_interval} = $self->{total_epoch_interval} / (scalar @dates - 1); #Divide total interval by number of intervals
 	
+	# Figure the mean, variance, and standard deviation for each bucket
+	foreach my $bucket (values %{$self->{distinct_buckets}}, values %{$self->{interval_buckets}}) {
+		$self->_generate_bucket_statistics($bucket);
+	}
+	
+	# If no profile is set, enable buckets automatically based on their statistics
+	if (! $self->profile) {
+		
+	}
+	
 	# Mark this object as being trained
 	$self->{trained}++;
 }
@@ -228,10 +250,11 @@ sub predict {
 	my $self = shift;
 	
 	my %opts = validate(@_, {
-		max_predictions => { type => SCALAR,     optional => 1 }, # How many predictions to return
-		stdev_limit     => { type => SCALAR,     default  => 2 }, # Number of standard deviations to search through, default to 2
-		min_date		=> { isa  => 'DateTime', optional => 1 }, # If set, make no prediction before 'min_date'
-		callbacks       => { type => ARRAYREF,   optional => 1 }, # Arrayref of coderefs to call when making predictions
+		max_predictions => { type => SCALAR,     	   optional => 1 }, # How many predictions to return
+		stdev_limit     => { type => SCALAR,     	   default  => 2 }, # Number of standard deviations to search through, default to 2
+		min_date		=> { isa  => 'DateTime', 	   optional => 1 }, # If set, make no prediction before 'min_date'
+		callbacks       => { type => ARRAYREF,   	   optional => 1 }, # Arrayref of coderefs to call when making predictions
+		clustering      => { type => SCALAR | HASHREF, optional => 1 }, # "1" to turn clustering on, or a hashref of cluster options
 	});
 	
 	# Force max predictions to one if we were called in scalar context
@@ -246,20 +269,48 @@ sub predict {
 	my %distinct_buckets = %{ $self->{distinct_buckets} };
 	my %interval_buckets = %{ $self->{interval_buckets} };
 	
-	# Figure the mean, variance, and standard deviation for each bucket
-	foreach my $bucket (values %distinct_buckets, values %interval_buckets) {
-		$self->_generate_bucket_statistics($bucket);
-	}
-	#use Data::Dumper; print "BUCKETS: " . Dumper(\%distinct_buckets);
-	
 	# Get the most recent of the provided dates by sorting them by their epoch seconds
 	my $most_recent_date = (sort { $b->hires_epoch() <=> $a->hires_epoch() } @{ $self->{dates} })[0];
 	
-	# Make a starting search date that has been moved ahead by the average interval beteween dates (in epoch seconds)
-	my $duration = new DateTime::Duration(
-		seconds => $self->{mean_epoch_interval}, # **Might need to round off hires second info here?
-	);
-	my $start_date = $most_recent_date + $duration;
+	# ****Cluster the dates if the clustering option is turned on
+	my $start_date;
+	if ($opts{clustering}) {
+		my $clustering = $self->_cluster_dates( $self->dates );
+		
+		# If addind a new date into the most recent cluster would give it a number of dates that is greater than
+		#  the mean + the standard deviation, set the start date into the future by the average number of seconds
+		#  between each cluster centroid ('avg_centroid_diff')
+		if ( (scalar keys %{$clustering->{most_recent_cluster}}) + 1 > $clustering->{mean} + $clustering->{num_elements_stdev}) {
+			my $duration = new DateTime::Duration(
+				seconds => $clustering->{avg_centroid_diff},
+			);
+			$start_date = $clustering->{most_recent_cluster}->{centroid} + $duration;
+		}
+		# Otherwise, make the start date the most recent cluster's centroid
+		else {
+			$start_date = $clustering->{most_recent_cluster}->{centroid};
+		}
+		
+		# Re-train using the cluster centroids as the dates
+		$self->dates( map { $_->{centroid} } @{$clustering->{clusters}} );
+		$self->train();
+	}
+	
+	# If clustering is not turned on, set the start date into the future by the average number of seconds between
+	#  each date
+	if (! defined $start_date) {
+		# Make a starting search date that has been moved ahead by the average interval beteween dates (in epoch seconds)
+		my $duration = new DateTime::Duration(
+			seconds => $self->{mean_epoch_interval}, # **Might need to round off hires second info here?
+		);
+		$start_date = $most_recent_date + $duration;
+	}
+	
+	use Data::Dumper; print Dumper($self);
+	
+	$self->_print_dates();
+	
+	print "START DATE: "  . $start_date . "\n";
 	
 	# A hash of predictions, dates are keyed by their hires_epoch() value
 	my %predictions = ();
@@ -332,6 +383,7 @@ sub _date_descend_distinct {
 	#my %opts = @_;
 	
 	# Validate the options
+	validation_options( allow_extra => 1 );
 	my %opts = validate(@_, {
 		date        	 	 => { isa => 'DateTime' },				 # The date to start searching in
 		most_recent_date 	 => { isa => 'DateTime' },               # The most recent date of the dates provided
@@ -343,7 +395,8 @@ sub _date_descend_distinct {
 		max_predictions  	 => { type => SCALAR,     optional => 1 }, # The maxmimum number of predictions to return (prevents overly long searches)
 		min_date		 	 => { isa  => 'DateTime', optional => 1 }, # If set, make no prediction before 'min_date'
 		callbacks 	     	 => { type => ARRAYREF,   optional => 1 }, # A list of custom coderefs that are called on each possible prediction
-	});	
+	});
+	validation_options( allow_extra => 0 );
 	
 	# Copy the options over into simple scalars so it's easier on my eyes
 	my $date 				 = delete $opts{'date'};        # Delete these ones out as we'll be overwriting them below
@@ -428,6 +481,7 @@ sub _date_descend_interval {
 	my $self = shift;
 	
 	# Validate the options
+	validation_options( allow_extra => 1 );
 	my %opts = validate(@_, {
 		date        	 	 => { isa => 'DateTime' },				 # The date to start searching in
 		most_recent_date 	 => { isa => 'DateTime' },               # The most recent date of the dates provided
@@ -439,7 +493,8 @@ sub _date_descend_interval {
 		max_predictions  	 => { type => SCALAR,     optional => 1 }, # The maxmimum number of predictions to return (prevents overly long searches)
 		min_date		 	 => { isa  => 'DateTime', optional => 1 }, # If set, make no prediction before 'min_date'
 		callbacks 	     	 => { type => ARRAYREF,   optional => 1 }, # A list of custom coderefs that are called on each possible prediction
-	});	
+	});
+	validation_options( allow_extra => 0 );
 	
 	# Copy the options over into simple scalars so it's easier on my eyes
 	my $date 				 = delete $opts{'date'};        # Delete these ones out as we'll be overwriting them below
@@ -481,7 +536,7 @@ sub _date_descend_interval {
 			return 1 if defined $max_predictions && (scalar keys %$predictions) >= $max_predictions;
 			
 			# Make a duration object using the accessor for this bucket
-			my $duration_increment = new DateTime::Duration( $bucket->{accessor} => $increment );
+			my $duration_increment = new DateTime::Duration( $bucket->accessor => $increment );
 			
 			# Get the new date
 			my $new_date = $date + $duration_increment;
@@ -502,6 +557,7 @@ sub _date_descend_interval {
 			# If we have no more buckets to search into, determine if this date is a good prediction
 			if (! $next_bucket_name) {
 				if ($self->_interval_check( %opts, date => $new_date )) {
+					print "We have a prediction!\n";
 					$predictions->{ $new_date->hires_epoch() } = $new_date;
 				}
 			}
@@ -542,7 +598,7 @@ sub _distinct_check {
 	my $date_deviation = 0;
 	foreach my $bucket (values %$distinct_buckets) {
 		# Get the value for this bucket's access for the $new_date
-		my $cref = $date->can( $bucket->{accessor} );
+		my $cref = $date->can( $bucket->accessor );
 		my $datepart_val = &$cref($date);
 		
 		# If the deviation of this datepart from the mean is within the standard deviation, 
@@ -613,14 +669,21 @@ sub _interval_check {
 	my $dur = $date->subtract_datetime( $most_recent_date );
 	
 	foreach my $bucket (values %$interval_buckets) {
-		my $cref = $dur->can( $bucket->{accessor} );
-			croak "Can't call accessor '" . $bucket->{accessor} . "' on " . ref($dur) . " object" unless $cref;
+		my $cref = $dur->can( $bucket->accessor );
+			croak "Can't call accessor '" . $bucket->accessor . "' on " . ref($dur) . " object" unless $cref;
 		my $interval = &$cref($dur);
 		
 		my $deviation = abs($interval - $bucket->{mean});
 		$date_deviation += $deviation;
 		
+		print "NAME: " . $bucket->name . "\n";
+		print "INTERVAL: $interval\n";
+		print "MEAN: " . $bucket->{mean} . "\n";
+		print "BUCKET STDEV: " . $bucket->{stdev} . "\n";
+		print "THIS DEVIATION: $deviation\n";
+		
 		if ($deviation > $bucket->{stdev} )  {
+			print "Not good!\n";
 			$good = 0;
 			last;
 		}
@@ -697,6 +760,168 @@ sub _bucket_statistics {
 	my $stdev = sqrt($variance);
 	
 	return ($mean, $variance, $stdev);
+}
+
+# Cluster the dates with the S-means algorithm. Returns a hashref of cluster information
+sub _cluster_dates {
+	my $self  = shift;
+	my @dates = @_;
+	
+	return if ! (@dates);
+	
+	# Get the variance and std dev for the distances between sequential dates
+	my $tot_diff = 0;
+	my @diffs    = ();
+	foreach my $i (1 .. $#dates) { #Skip the 0th element since nothing precedes it
+		my $diff = $dates[ $i ]->hires_epoch - $dates[ $i - 1 ]->hires_epoch;
+		$tot_diff += $diff;
+		push(@diffs, $diff);
+	}
+	my $mean_diff = $tot_diff / scalar @diffs;
+	
+	# Get the variance & std dev
+	my $sum_diff_variance = 0;
+	foreach my $diff (@diffs) {
+		$sum_diff_variance += ($diff - $mean_diff) ** 2;
+	}
+	my $diff_variance = $sum_diff_variance / scalar @diffs;
+	my $diff_stdev = sqrt($diff_variance);
+	
+	#Cluster them!
+	my %clusters = ();
+	
+	## S-means
+	my $change    = 1; # Flag for whether the clusters are changing or not, stop when it's 0
+	my $k         = 1; # Initial number of clusters
+	my $threshold = $diff_stdev; # Similarity threshold
+	
+	# Randomly choose [k] centroids from among the data points
+	# *** Could we use k-means++ here instead?
+	my %cluster_map = ();
+	foreach my $i (1 .. $k) {
+		my $centroid = $dates[rand @dates]->clone;
+		$cluster_map{ $i } = {
+			i        => $i,
+			centroid => $centroid,
+			elements => {}
+		};
+	}
+	
+	while ($change == 1) {
+		# Flag for if a new cluster was made this iteration
+		my $new_cluster = 0;
+		
+		# For each data point
+		foreach my $date (@dates) {
+			my $closest_dist;    # Closest distance to this data point
+			my $closest_cluster; # Closest centroid to this data point
+			
+			# For each cluster
+			while (my ($ci, $cluster) = each %cluster_map) {
+				# Get the distance from this point to the cluster centroid
+				my $dist = abs($date->hires_epoch - $cluster->{centroid}->hires_epoch);
+				
+				# If this distance is closer than the closest recorded distance, reset the closest
+				#   distance and cluster
+				if (! defined $closest_dist || $dist < $closest_dist) {
+					$closest_dist    = $dist;
+					$closest_cluster = $cluster;
+				}
+			}
+			
+			# If the distance is below the threshold, add it to this cluster
+			if ($closest_dist < $threshold) {
+				$closest_cluster->{elements}->{ $date->hires_epoch } = $date;
+			}
+			# Otherwise create a new cluster with this data point as the centroid,
+			#   also add this data point to the new cluster
+			else {
+				my $max_ci = max keys %cluster_map;
+				$max_ci++;
+				$cluster_map{ $max_ci } = {
+					i 		 => $max_ci,
+					centroid => $date->clone,
+					elements => {
+						$date->hires_epoch => $date,
+					}
+				};
+			}
+		}
+		
+		my $cluster_changed = 0;
+		
+		# For each cluster
+		while (my ($ci, $cluster) = each %cluster_map) {
+			# Delete clusters that have no elements
+			if (scalar keys %{ $cluster->{elements} } == 0) {
+				delete $cluster_map{ $ci };
+				next;
+			}
+	
+			# Calculate the average Euclidean distance to each of its elements (since we're one dimensional here it's just the mean)
+			my $tot   = 0;
+			my $count = 0;
+			foreach my $date (values %{ $cluster->{elements} }) {
+				$tot += $date->hires_epoch;
+				$count++;
+			}
+			my $new_centroid = $tot / $count;
+			
+			#If this newly calculated centroid is different than the current one, assign it
+			if ($new_centroid != $cluster->{centroid}->hires_epoch) {
+				$cluster->{centroid} = DateTime->from_epoch( epoch => $new_centroid );
+				
+				# Flip the cluster changed flag
+				$cluster_changed = 1;
+			}
+		}
+		
+		# If no cluster was changed and no new cluster was created, we're done clustering
+		if (! $cluster_changed && ! $new_cluster) {
+			$change = 0;
+		}
+	}
+	
+	# Get the average difference between each cluster centroid
+	my $centroid_tot_diff = 0;
+	my $prev_centroid;
+	foreach my $cluster (sort { $a->{centroid}->hires_epoch <=> $b->{centroid}->hires_epoch } values %cluster_map) {
+		if (! defined $prev_centroid) {
+			$prev_centroid = $cluster->{centroid};
+		}
+		
+		$centroid_tot_diff += ( $cluster->{centroid}->hires_epoch - $prev_centroid->hires_epoch );
+		
+		$prev_centroid = $cluster->{centroid};
+	}
+	my $avg_centroid_diff = $centroid_tot_diff / ( (scalar keys %cluster_map) - 1);
+	
+	# Get the most recent cluster based on its centroid
+	my $most_recent_cluster = (sort { $b->{centroid}->hires_epoch <=> $a->{centroid}->hires_epoch } values %cluster_map)[0];
+	
+	# Get some statistics on the clusters (average number of elements, standard deviation, etc)
+	my $num_elements_total = 0;
+	foreach my $cluster (values %cluster_map) {
+		$num_elements_total += (scalar keys %{$cluster->{elements}});
+	}
+	my $num_elements_mean = $num_elements_total / scalar keys %cluster_map;
+	
+	my $sum_num_elements_variance = 0;
+	foreach my $cluster (values %cluster_map) {
+		$sum_num_elements_variance += ((scalar keys %{$cluster->{elements}}) - $num_elements_mean) ** 2;
+	}
+	my $num_elements_variance = $sum_num_elements_variance / scalar keys %cluster_map;
+	my $num_elements_stdev = sqrt($num_elements_variance);
+	
+	# Return a hashref of cluster info
+	return {
+		avg_centroid_diff   => $avg_centroid_diff,
+		clusters            => [values %cluster_map],
+		most_recent_cluster => $most_recent_cluster,
+		num_elements_mean     => $num_elements_mean,
+		num_elements_variance => $num_elements_variance,
+		num_elements_stdev    => $num_elements_stdev,
+	};
 }
 
 # Whether this instance has been trained by train() or not

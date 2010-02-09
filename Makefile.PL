@@ -12,6 +12,7 @@ build_requires 'Test::More' => 0.94;
 requires       'DateTime'  => 0;
 requires	   'Params::Validate' => '0.91';
 requires       'Scalar::Util';
+requires       'List::Util';
 
 auto_install;
 

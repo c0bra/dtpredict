@@ -255,9 +255,8 @@ our @all_accessors = uniq (@distinct_bucket_accessors, @interval_bucket_accessor
 
 sub new {
     my $proto = shift;
-    my %opts  = @_;
     
-    validate(@_, {
+    my %opts = validate(@_, {
     	profile          => { type => SCALAR,   optional => 1 }, # Preset profile alias
     	distinct_buckets => { type => ARRAYREF, optional => 1 }, # Custom distinct bucket definitions
     	interval_buckets => { type => ARRAYREF, optional => 1 }, # Custom interval bucket definitions
@@ -283,6 +282,13 @@ sub new {
     }
     elsif ( ! $opts{'distinct_buckets'} && ! $opts{'interval_buckets'}) {
     	confess("Must specify either a profile or a custom set of buckets");
+    }
+    
+    # Make sure there's at least one bucket name in the bucket options
+    if (scalar @{ $opts{'distinct_buckets'} } == 0 &&
+    	scalar @{ $opts{'interval_buckets'} } == 0) {
+    	
+    	confess("Bucket options specified but no bucket names");
     }
     
     # Insert a bucket object into the bucket lists for the specified distinct buckets
@@ -339,8 +345,8 @@ sub buckets {
 	return wantarray ? @to_return : \@to_return;
 }
 
-# Return either the full list of the distinct buckets or a slice of the buckets according to a list of names
-# sent in
+# Return either the full list of the distinct buckets in this instance or a slice of the buckets
+# according to a list of names sent in
 sub _distinct_buckets {
 	my $self    = shift;
 	my @buckets = @_;
@@ -375,6 +381,7 @@ sub _interval_buckets {
 
 1;
 
+
 package DateTime::Event::Predict::Profile::Bucket;
 
 use Params::Validate qw(:all);
@@ -382,9 +389,8 @@ use Carp qw( croak confess );
 
 sub new {
     my $proto = shift;
-    my %opts  = @_;
     
-    %opts = validate(@_, {
+    my %opts = validate(@_, {
     	name      => { type => SCALAR },
     	type      => { type => SCALAR },
     	order     => { type => SCALAR }, 
@@ -392,18 +398,14 @@ sub new {
     	duration  => { type => SCALAR, optional => 1 }, # Interval buckets don't have durations
     	trimmable => { type => SCALAR, optional => 1 },
     	on        => { type => SCALAR, default  => 1 },
+    	weight    => { type => SCALAR, default  => 1 },
     });
     
     my $class = ref( $proto ) || $proto;
     
-    #unless (exists $BUCKETS{ $opts{'name'} }) {
-	#	confess("Undefined bucket: '" . $opts{'name'} . "' provided");
-	#}
-    
     my $self = \%opts;
     
-    #$self->{bucket} = $BUCKETS{ $opts{'name'} };
-	$self->{weight} = ""; #Not used yet
+	$self->{buckets} = {};
     
     bless($self, $class);
     
@@ -446,10 +448,25 @@ sub trimmable {
 	return $self->{trimmable};
 }
 
+# Get or set this bucket's weight
 sub weight {
 	my $self = shift;
+	my ($weight) = @_;
 	
-	return $self->{weight};
+	# Weight must be a floating point number
+	validate_pos(@_, {
+		type     => SCALAR,
+		default  => 1,
+		regex    => qr/^-?[0-9]+\.[0-9]*$/ },
+		optional => 1,
+	);
+	
+	if (defined $weight) {
+		$self->{weight} = $weight;
+	}
+	else {
+		return $self->{weight};
+	}
 }
 
 #Get or set whether this bucket is on or not

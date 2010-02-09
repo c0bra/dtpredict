@@ -1,15 +1,21 @@
 Revision history for DateTime-Event-Predict
 
-0.01_04
+0.01_05
 
 	Bugs fixed:
+	 - DTP::Profile now makes sure at least one bucket name is provided if no default profile
+	   is set.
+	
+	Changes:
+	 - Buckets in a DTP object are actual DTP::Profile::Bucket objects now
 	
 	Features added:
 	 - Added _generate_bucket_statistics() method that will take the mean, stdev and variance
-	   from _bucket_statistics and stick them in the bucket(s) automatically.
+	   from _bucket_statistics and stick them in the bucket(s) automatically
+	 - Added _cluster_dates() which takes a list of dates and returns them in clusters
 
 0.01_04 2010-01-31 00:21:22
 	
 	Bug fixed:
-	 - Fixed test in t/09-today.t failing when the current day was at end of month.
+	 - Fixed test in t/09-today.t failing when the current day was at end of month
 
