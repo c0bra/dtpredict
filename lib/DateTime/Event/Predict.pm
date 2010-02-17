@@ -363,7 +363,11 @@ sub predict {
 		if (%interval_buckets) {
 			while (my ($hires, $prediction) = each %predictions) {
 				# Delete the date from the predictions hash if it's not good according to the interval statistics
-				if (! $self->_interval_check( $prediction )) {
+				if (! $self->_interval_check(
+					date             => $prediction,
+					interval_buckets => \%interval_buckets,
+					most_recent_date => $most_recent_date,
+				)) {
 					delete $predictions{ $hires };
 				}
 			}

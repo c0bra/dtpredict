@@ -13,7 +13,7 @@
 
 package DateTime::Event::Predict::Profile;
 
-use Carp qw( croak confess );
+use Carp qw( croak confess carp );
 use Params::Validate qw(:all);
 use List::MoreUtils qw(uniq);
 
@@ -307,6 +307,8 @@ sub new {
     
     # Insert a bucket object into the bucket lists for the specified distinct buckets
     foreach my $bucket_name (@{ $opts{'distinct_buckets'} }) {
+    	croak "No such distinct bucket '$bucket_name'" unless (exists $DISTINCT_BUCKETS{ $bucket_name });
+    	
 		my $bucket = $DISTINCT_BUCKETS{ $bucket_name }->clone;
 		
 		# Put this bucket in the full bucket list and the distinct bucket list
@@ -316,6 +318,8 @@ sub new {
 	
 	# Insert a bucket object into the bucket lists for the specified interval buckets
 	foreach my $bucket_name (@{ $opts{'interval_buckets'} }) {
+		croak "No such interval bucket '$bucket_name'" unless (exists $INTERVAL_BUCKETS{ $bucket_name });
+		
 		my $bucket = $INTERVAL_BUCKETS{ $bucket_name }->clone;
 		
 		# Put this bucket in the full bucket list and the interval bucket list

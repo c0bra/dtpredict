@@ -11,6 +11,22 @@ TODO list for Perl module DateTime::Even::Predict
 [NOTE] - Also self-explanatory
 -------------------------------------------------------
 
+2/11/2010
+* [TODO] Write a test that makes sure a prediction that is good with regard to the distinct buckets
+  is removed if it is bad with regard to the interval buckets.
+
+2/10/2010
+* Regarding the problem with interval buckets and clustering from yesterday: if we thinking about
+  how clustering works, what we are doing is completely changing the rules about how the dates
+  relate to each other. Instead of there being 18 dates we say that there are technically 6 dates,
+  each of which is a cluster containing 3 dates. The rules about how the dates relate to each other
+  as a whole now ONLY applies at the cluster level, and then within the cluster there is another set
+  of rules but it only applies to that cluster.
+* [BUG] Sudden thought: some DateTime::Duration's may not have accessors available for dateparts they
+  don't have. That is, if a date is just YMD the duration might not have a 'seconds' accessor and
+  thus our interval training method will die ungracefully.
+  - Nothing bad happens. It makes predictions successfully.
+
 
 2/9/2010
 * [PROBLEM] I just ran another test and DateTime::in_units() is definitely NOT working. Using it on the
@@ -46,14 +62,16 @@ TODO list for Perl module DateTime::Even::Predict
   standard deviation of 0, we will still make bad predictions because we're not using that interval for
   anything.
   - What if we create a fake bucket prefilled with all the statistical information. That's hacky but it
-    could work. One problem to solve is we have to compare different in dates using epoch seconds. We
+    could work. One problem to solve is we have to compare difference in dates using epoch seconds. We
     can't use the 'seconds' accessor because it only shows the difference in clock seconds, not actual
     interval seconds.
+    - I've added some hacky bits to _convert_seconds() and _get_date_interval() so it works properly
+      with the fake cluster bucket.
 * [BUG] - I have the fake clustering bucket on now, and it appears to be working, however the good prediction
   for 13-cluster.t is failing to fall within the stdev for the 'days' bucket. The stdev is 2.17 and this
   date is 5, as it's 5 days from the closest date, which is CORRECT because the mean distance between closest
   member elements of the clusters is 5, and the stdev for that is 0. So it HAS to be 5 days away, but also
-  must fit in the normal days stdev? That might not work :(
+  must fit in the normal days stdev. That might not work :(
 
 
 2/8/2010

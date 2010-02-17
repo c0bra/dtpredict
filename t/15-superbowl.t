@@ -29,4 +29,7 @@ my $predicted_date = $dtp->predict;
 
 ok(defined $predicted_date, 'Got a defined prediction back');
 
-is($predicted_date->year, 1972, 'Predicted ' . $predicted_date->year . ', should be 1972');
+SKIP: {
+	skip "No prediction returned from predict()", 1 if ! $predicted_date;
+	is($predicted_date->year, 1972, 'Predicted ' . $predicted_date->year . ', should be 1972');
+}

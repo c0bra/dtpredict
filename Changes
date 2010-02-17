@@ -5,6 +5,7 @@ Revision history for DateTime-Event-Predict
 	Bugs fixed:
 	 - DTP::Profile now makes sure at least one bucket name is provided if no default profile
 	   is set.
+	 - DTP::Profile now checks to make sure supplied buckets are valid and carps if they aren't
 	
 	Changes:
 	 - Buckets in a DTP object are actual DTP::Profile::Bucket objects now
