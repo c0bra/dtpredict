@@ -157,6 +157,8 @@ sub profile {
 sub train {
 	my $self = shift;
 	
+	print "TRAINING\n";
+	
 	# Clear out anything already in the the buckets
 	foreach my $bucket (values %{$self->{distinct_buckets}}, values %{$self->{interval_buckets}} ) {
 		$bucket->{buckets} = {};
@@ -223,6 +225,7 @@ sub train {
 			#my $interval = $dur->in_units( $bucket->accessor );
 			
 			my $interval = $self->_get_date_interval($bucket->name, $bucket->accessor, $date, $prev_date);
+			print "INTERVAL: $interval (" . $date . ", " . $prev_date . ")\n";
 			
 			$bucket->{buckets}->{ $interval }++;
 		}
@@ -278,9 +281,6 @@ sub predict {
 	my %distinct_buckets = %{ $self->{distinct_buckets} };
 	my %interval_buckets = %{ $self->{interval_buckets} };
 	
-	# Get the most recent of the provided dates by sorting them by their epoch seconds
-	my $most_recent_date = (sort { $b->hires_epoch() <=> $a->hires_epoch() } @{ $self->{dates} })[0];
-	
 	# ****Cluster the dates if the clustering option is turned on
 	my $start_date;
 	if ($opts{clustering}) {
@@ -289,35 +289,68 @@ sub predict {
 		
 		# Only proceed with clustering if _cluster_dates completed and gave us a number of clusters less than the number of dates
 		if (defined $clustering && $clustering->{num_clusters} < scalar $self->dates) {
-			# If addind a new date into the most recent cluster would give it a number of dates that is greater than
+			# If adding a new date into the most recent cluster would give it a number of dates that is greater than
 			#  the mean + the standard deviation, set the start date into the future by the average number of seconds
-			#  between each cluster centroid ('avg_centroid_diff')
+			#  between the last element of each cluster and the first element of the cluster following it('avg_centroid_diff')
 			if ( (scalar keys %{$clustering->{most_recent_cluster}}) + 1 > $clustering->{mean} + $clustering->{num_elements_stdev}) {
 				my $duration = new DateTime::Duration(
-					seconds => $clustering->{firstlast_diff_mean},
+					seconds => $clustering->{first_diff_mean},
 				);
-				$start_date = $clustering->{most_recent_cluster}->{centroid} + $duration;
+				
+				#$start_date = $clustering->{most_recent_cluster}->{centroid} + $duration;
+					
+				## Re-train using the first element of each cluster as the dates
+				my @dates = ();
+				# Go through each cluster
+				foreach my $cluster (@{$clustering->{clusters}}) {
+					# Find the first element and push it onto the dates
+					my $first = (sort { $a->hires_epoch() <=> $b->hires_epoch() } values %{$cluster->{elements}})[0];
+					push(@dates, $first);
+				}
+				
+				$self->dates( @dates );
+				$self->train();
+				
+				# Make the start date the most recent element of the most recent cluster
+				#$start_date = (sort { $b->hires_epoch() <=> $a->hires_epoch() } values %{$clustering->{most_recent_cluster}->{elements}})[0]
+				#	+ $duration;
+				
+				# Make the start date the first element of the most recent cluster
+				$start_date = (sort { $a->hires_epoch() <=> $b->hires_epoch() } values %{$clustering->{most_recent_cluster}->{elements}})[0]
+					+ $duration;
+				
+				#use Data::Dumper; print Dumper($clustering);
+				
+				# Create new fake bucket with cluster interval info
+				$interval_buckets{cluster} = $INTERVAL_BUCKETS{ 'seconds' }->clone;
+				$interval_buckets{cluster}->{mean}     = $clustering->{first_diff_mean};
+				$interval_buckets{cluster}->{variance} = $clustering->{first_diff_variance};
+				$interval_buckets{cluster}->{stdev}    = $clustering->{first_diff_stdev};
+				$interval_buckets{cluster}->{name}     = 'cluster';
+				$interval_buckets{cluster}->{accessor} = 'seconds';
 			}
-			# Otherwise, make the start date the most recent cluster's centroid
+			# Otherwise, make the start date the most recent cluster's latest date, and retrain using this cluster's info
 			else {
-				$start_date = $clustering->{most_recent_cluster}->{centroid};
+				$start_date = (sort { $b->hires_epoch() <=> $a->hires_epoch() } values %{$clustering->{most_recent_cluster}->{elements}})[0];
+				
+				# Re-train using the most recent cluster centroid's elements as the dates
+				#$self->dates( map { $_->{centroid} } @{$clustering->{clusters}} );
+				$self->dates( values %{$clustering->{most_recent_cluster}->{elements}} );
+				$self->train();
+				
+				# Create new fake bucket with cluster interval info
+				$interval_buckets{cluster} = $INTERVAL_BUCKETS{ 'seconds' }->clone;
+				$interval_buckets{cluster}->{mean}     = $clustering->{firstlast_diff_mean};
+				$interval_buckets{cluster}->{variance} = $clustering->{firstlast_diff_variance};
+				$interval_buckets{cluster}->{stdev}    = $clustering->{firstlast_diff_stdev};
+				$interval_buckets{cluster}->{name}     = 'cluster';
+				$interval_buckets{cluster}->{accessor} = 'seconds';
 			}
-			
-			# Re-train using the cluster centroids as the dates
-			#$self->dates( map { $_->{centroid} } @{$clustering->{clusters}} );
-			#$self->train();
-			
-			# Create new fake bucket with cluster interval info
-			$interval_buckets{cluster} = $INTERVAL_BUCKETS{ 'seconds' }->clone;
-			$interval_buckets{cluster}->{mean}     = $clustering->{firstlast_diff_mean};
-			$interval_buckets{cluster}->{variance} = $clustering->{firstlast_diff_variance};
-			$interval_buckets{cluster}->{stdev}    = $clustering->{firstlast_diff_stdev};
-			$interval_buckets{cluster}->{name}     = 'cluster';
-			$interval_buckets{cluster}->{accessor} = 'seconds';
 		}
 	}
 	
-	#use Data::Dumper; print Dumper(\%interval_buckets); exit;
+	# Get the most recent of the provided dates by sorting them by their epoch seconds
+	my $most_recent_date = (sort { $b->hires_epoch() <=> $a->hires_epoch() } @{ $self->{dates} })[0];
 	
 	# If clustering is not turned on, set the start date into the future by the average number of seconds between
 	#  each date
@@ -332,8 +365,6 @@ sub predict {
 	$start_date = $self->_trim_date($start_date);
 	
 	print "START DATE: $start_date\n";
-	
-	#use Data::Dumper; print Dumper($self);
 	
 	# A hash of predictions, dates are keyed by their hires_epoch() value
 	my %predictions = ();
@@ -771,7 +802,7 @@ sub _get_date_interval {
 	# All other date parts
 	else {
 		my $dur = $date1->subtract_datetime( $date2 );
-	
+		
 		my $cref = $dur->can( $bucket_accessor );
 			croak "Can't call accessor '" . $bucket_accessor . "' on " . ref($dur) . " object" unless $cref;
 		$interval = &$cref($dur);
@@ -953,9 +984,10 @@ sub _cluster_dates {
 	
 	
 	# Get the average difference between each cluster centroid, as well as the average difference
-	#   between the first and last element of each centroid
+	#   between the last element of each centroid and the first element of the centroid that follows it
 	my $centroid_tot_diff  = 0;
 	my $firstlast_tot_diff = 0;
+	my $first_tot_diff     = 0;
 	my $prev_cluster;
 	foreach my $cluster (sort { $a->{centroid}->hires_epoch <=> $b->{centroid}->hires_epoch } values %cluster_map) {
 		if (! defined $prev_cluster) {
@@ -970,16 +1002,23 @@ sub _cluster_dates {
 		my @sorted_cluster      = (sort {$a <=> $b } keys %{$cluster->{elements}});
 		my @sorted_prev_cluster = (sort {$a <=> $b } keys %{$prev_cluster->{elements}});
 		
-		my $diff = $sorted_cluster[0] - $sorted_prev_cluster[ $#sorted_prev_cluster ];
-		$firstlast_tot_diff += $diff;
+		# Get the difference between the first element of this cluster and the last element of the cluster before it
+		my $firstlast_diff = $sorted_cluster[0] - $sorted_prev_cluster[ $#sorted_prev_cluster ];
+		$firstlast_tot_diff += $firstlast_diff;
+		
+		# Get the difference between the first element of this cluster and the first element of the cluster before it
+		my $first_diff = $sorted_cluster[0] - $sorted_prev_cluster[0];
+		$first_tot_diff += $first_diff;
 		
 		$prev_cluster = $cluster;
 	}
 	my $centroid_diff_mean  = $centroid_tot_diff  / ((scalar keys %cluster_map) - 1);
 	my $firstlast_diff_mean = $firstlast_tot_diff / ((scalar keys %cluster_map) - 1);
+	my $first_diff_mean     = $first_tot_diff / ((scalar keys %cluster_map) - 1);
 	
 	# Get the variance and standard deviation in cluster interval differences
 	my $firstlast_diff_tot_variance = 0;
+	my $first_diff_tot_variance     = 0;
 	undef $prev_cluster;
 	foreach my $cluster (sort { $a->{centroid}->hires_epoch <=> $b->{centroid}->hires_epoch } values %cluster_map) {
 		if (! defined $prev_cluster) {
@@ -991,16 +1030,20 @@ sub _cluster_dates {
 		my @sorted_cluster      = (sort {$a <=> $b } keys %{$cluster->{elements}});
 		my @sorted_prev_cluster = (sort {$a <=> $b } keys %{$prev_cluster->{elements}});
 		
-		my $diff = (($sorted_cluster[0] -
-			        $sorted_prev_cluster[ $#sorted_prev_cluster ]) - $firstlast_diff_mean) ** 2;
-		            
+		my $firstlast_diff = (($sorted_cluster[0] -
+			        		     $sorted_prev_cluster[ $#sorted_prev_cluster ]) - $firstlast_diff_mean) ** 2;
+		$firstlast_diff_tot_variance += $firstlast_diff;
 		
-		$firstlast_diff_tot_variance += $diff;
+		my $first_diff = (($sorted_cluster[0] -
+			        	     $sorted_prev_cluster[0]) - $first_diff_mean) ** 2;
+		$first_diff_tot_variance += $first_diff;
 			
 		$prev_cluster = $cluster;
 	}
 	my $firstlast_diff_variance = $firstlast_diff_tot_variance / ((scalar keys %cluster_map) - 1);
 	my $firstlast_diff_stdev    = sqrt($firstlast_diff_variance);
+	my $first_diff_variance = $first_diff_tot_variance / ((scalar keys %cluster_map) - 1);
+	my $first_diff_stdev    = sqrt($first_diff_variance);
 	
 	# Get the most recent cluster based on its centroid
 	my $most_recent_cluster = (sort { $b->{centroid}->hires_epoch <=> $a->{centroid}->hires_epoch } values %cluster_map)[0];
@@ -1028,6 +1071,9 @@ sub _cluster_dates {
 		firstlast_diff_mean     => $firstlast_diff_mean,
 		firstlast_diff_variance => $firstlast_diff_variance,
 		firstlast_diff_stdev    => $firstlast_diff_stdev,
+		first_diff_mean         => $first_diff_mean,
+		first_diff_variance     => $first_diff_variance,
+		first_diff_stdev        => $first_diff_stdev,
 		centroid_diff_mean      => $centroid_diff_mean,
 		clusters                => [values %cluster_map],
 		num_clusters            => (scalar keys %cluster_map),

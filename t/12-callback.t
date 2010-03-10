@@ -41,6 +41,7 @@ for  (1 .. 4) {
 }
 
 $dtp->train();
+#$dtp->_print_dates();
 
 #use Data::Dumper; print Dumper($dtp);
 

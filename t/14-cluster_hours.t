@@ -3,7 +3,7 @@
 # Predict a date using where the supplied dates are clustered
 
 use strict;
-use Test::More tests => 1;
+use Test::More tests => 2;
 
 use DateTime;
 use DateTime::Event::Predict;

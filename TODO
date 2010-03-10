@@ -1,19 +1,38 @@
 TODO list for Perl module DateTime::Even::Predict
 
-------------------------LEGEND-------------------------
+------------------------LEGEND-------------------------------
 [TODO] - Something I have to do
 [TODO/DONE] - Something I had to do and did
 [BUG] - Bug I found
+[NOBUG] - Bug that after testing turns out to not be a bug
 [FIX] - Bugfix
 [FIX/NOT] - Bugfix that didn't actually fix anything
 [PROBLEM] - Problem with methodology
 [IDEA] - Self-explanatory
 [NOTE] - Also self-explanatory
--------------------------------------------------------
+-------------------------------------------------------------
+
+3/10/2010
+* [FIX] Got the clustering test scripts working by implementing the changes in the [IDEA] below.
+* [IDEA] When putting a predicted date in a new cluster should we use the statistics on the first
+  element of each cluster? Using the centroids is producing bad results as, for example, if the
+  first element of each cluster is on a Monday and each centroid is a Tuesday, then using the
+  centroids to train DTP will not allow the predicted date to be a Monday as it will be outside
+  of the standard deviation.
+  - If we go by the first element then we need to add a firstdiff_mean to _cluster_dates() and
+    use that rather than firstlast_diff_mean.
+
+3/9/2010
+* [FIX] Changed clustering to base the "starting date" for predictions on the difference between
+  the last element of each cluster and the first element of the cluster following it, rather than
+  the difference between cluster centroids, this got 12-callback.t working.
+* [BUG] It looks like _date_descend_interval() is searching for the same date twice, possibly on
+  the (1, -1) search range the range isn't far enough apart to increase the relevant date-parts.
+  If it's borked in _date_descend_interval() it's probably the same in _date_descend_distinct().
 
 2/11/2010
-* [TODO] Write a test that makes sure a prediction that is good with regard to the distinct buckets
-  is removed if it is bad with regard to the interval buckets.
+* [TODO] Write a test that makes sure that a prediction that is good with regard to the distinct
+  buckets is removed if it is bad with regard to the interval buckets.
 
 2/10/2010
 * Regarding the problem with interval buckets and clustering from yesterday: if we thinking about
@@ -22,7 +41,7 @@ TODO list for Perl module DateTime::Even::Predict
   each of which is a cluster containing 3 dates. The rules about how the dates relate to each other
   as a whole now ONLY applies at the cluster level, and then within the cluster there is another set
   of rules but it only applies to that cluster.
-* [BUG] Sudden thought: some DateTime::Duration's may not have accessors available for dateparts they
+* [NOBUG] Sudden thought: some DateTime::Duration's may not have accessors available for dateparts they
   don't have. That is, if a date is just YMD the duration might not have a 'seconds' accessor and
   thus our interval training method will die ungracefully.
   - Nothing bad happens. It makes predictions successfully.
