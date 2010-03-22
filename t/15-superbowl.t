@@ -23,7 +23,9 @@ for ( 1966, 1969 ) {
 $dtp->train();
 
 # Predict the next date
-my $predicted_date = $dtp->predict;
+my $predicted_date = $dtp->predict(
+	#clustering => 0,
+);
 
 #use Data::Dumper; warn Dumper($dtp); exit;
 

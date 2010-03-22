@@ -288,7 +288,7 @@ sub predict {
 		my $clustering = $self->_cluster_dates( $self->dates );
 		
 		# Only proceed with clustering if _cluster_dates completed and gave us a number of clusters less than the number of dates
-		if (defined $clustering && $clustering->{num_clusters} < scalar $self->dates) {
+		if (defined $clustering && $clustering->{num_clusters} < scalar @{$self->dates}) {
 			# If adding a new date into the most recent cluster would give it a number of dates that is greater than
 			#  the mean + the standard deviation, set the start date into the future by the average number of seconds
 			#  between the last element of each cluster and the first element of the cluster following it('avg_centroid_diff')

@@ -12,7 +12,21 @@ TODO list for Perl module DateTime::Even::Predict
 [NOTE] - Also self-explanatory
 -------------------------------------------------------------
 
+3/22/2010
+* [FIX] Clustering bug in 15-superbowl.t has been fixed, sort of; clustering was being used
+  no matter what number of elements it returned because the date array wasn't being cast as
+  an array. Now it will only cluster when clustering returns a smaller number of elements
+  than the number of dates.
+  - The larger problem still exists, though, which is that moving from a solid date interval
+    check with no deviation means that clustering will mess up as you get fractional
+    differences when moving from years to seconds (possibly due to leap years).
+  - [TODO] Add clustering tests with normal years and with years that coincide with leap years.
+* The clustering bug in 15-superbowl.t from 3/10 doesn't appear in s_means_clustering.pl, i.e.
+  it keeps two clusters with the centroids as the dates.
+
 3/10/2010
+ *[BUG] It looks like clustering is turning on with just two dates (in 15-superbowl.t). That
+  ain't right.
 * [FIX] Got the clustering test scripts working by implementing the changes in the [IDEA] below.
 * [IDEA] When putting a predicted date in a new cluster should we use the statistics on the first
   element of each cluster? Using the centroids is producing bad results as, for example, if the
@@ -21,6 +35,7 @@ TODO list for Perl module DateTime::Even::Predict
   of the standard deviation.
   - If we go by the first element then we need to add a firstdiff_mean to _cluster_dates() and
     use that rather than firstlast_diff_mean.
+    - This is done.
 
 3/9/2010
 * [FIX] Changed clustering to base the "starting date" for predictions on the difference between
