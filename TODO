@@ -12,12 +12,16 @@ TODO list for Perl module DateTime::Even::Predict
 [NOTE] - Also self-explanatory
 -------------------------------------------------------------
 
+3/23/2010
+* Added 17-cluster_years.t to work on a fix for the bug listed yesterday. Right now the prediction
+  seems to run endlessly.
+
 3/22/2010
 * [FIX] Clustering bug in 15-superbowl.t has been fixed, sort of; clustering was being used
   no matter what number of elements it returned because the date array wasn't being cast as
   an array. Now it will only cluster when clustering returns a smaller number of elements
   than the number of dates.
-  - The larger problem still exists, though, which is that moving from a solid date interval
+  - [BUG] The larger problem still exists, though, which is that moving from a solid date interval
     check with no deviation means that clustering will mess up as you get fractional
     differences when moving from years to seconds (possibly due to leap years).
   - [TODO] Add clustering tests with normal years and with years that coincide with leap years.

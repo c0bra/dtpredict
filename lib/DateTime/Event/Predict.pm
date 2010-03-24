@@ -287,6 +287,9 @@ sub predict {
 		# Attempt clustering
 		my $clustering = $self->_cluster_dates( $self->dates );
 		
+		print "NUMCLUSTERS: " . $clustering->{num_clusters} . "\n";
+		print "NUMDATES: " . (scalar @{$self->dates}) . "\n";
+		
 		# Only proceed with clustering if _cluster_dates completed and gave us a number of clusters less than the number of dates
 		if (defined $clustering && $clustering->{num_clusters} < scalar @{$self->dates}) {
 			# If adding a new date into the most recent cluster would give it a number of dates that is greater than
