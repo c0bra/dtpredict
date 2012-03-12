@@ -34,7 +34,7 @@ foreach my $cluster (1 .. 3) {
 }
 
 # Date list should be this, 3 clusters of 3 datetimes, each cluster separated by 4 years and each date in
-# a cluster separated from its cluster bretherern by 1 year
+# a cluster separated from its cluster bretheren by 1 year
 
 # 01/01/1971 00:00:00
 # 01/01/1972 00:00:00
@@ -46,7 +46,7 @@ foreach my $cluster (1 .. 3) {
 # 01/01/1984 00:00:00
 # 01/01/1985 00:00:00
 
-#$dtp->_print_dates(); exit;
+$dtp->_print_dates(); exit;
 
 my $prediction = $dtp->predict( clustering => 1 );
 
