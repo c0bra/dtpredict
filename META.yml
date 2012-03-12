@@ -1,14 +1,16 @@
 ---
 abstract: 'Predict new dates from a set of dates'
 author:
+  - 'Brian Hann, C<< <brian.hann at gmail.com> >>'
   - 'Brian Hann <brian.hann@gmail.com>'
 build_requires:
-  ExtUtils::MakeMaker: 6.42
+  ExtUtils::MakeMaker: 6.62
   Test::More: 0.94
 configure_requires:
-  ExtUtils::MakeMaker: 6.42
+  ExtUtils::MakeMaker: 6.62
 distribution_type: module
-generated_by: 'Module::Install version 0.91'
+dynamic_config: 1
+generated_by: 'Module::Install version 1.04'
 license: perl
 meta-spec:
   url: http://module-build.sourceforge.net/META-spec-v1.4.html
@@ -23,6 +25,7 @@ no_index:
     - IDEAS
 requires:
   DateTime: 0
+  List::Util: 0
   Params::Validate: 0.91
   Scalar::Util: 0
   perl: 5.6.0
