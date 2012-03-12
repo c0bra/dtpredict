@@ -23,7 +23,7 @@ t/00-load.t
 t/01-basics.t
 t/02-profile.t
 t/08-predict.t
-t/09-today.t
+t/09-tomorrow.t
 t/10-easter.t
 t/11-easter_lunar.t
 t/15-superbowl.t
