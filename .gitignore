@@ -6,3 +6,6 @@ t/boilerplate.t
 t/pod.t
 t/pod-coverage.t
 nytprof.out
+.prove
+MYMETA.yml
+MYMETA.json
